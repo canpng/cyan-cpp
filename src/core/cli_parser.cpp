@@ -4,6 +4,7 @@
 #include <cwchar>
 #include <limits>
 #include <optional>
+#include <utility>
 
 #include "cyan/platform/utf.hpp"
 
@@ -116,7 +117,16 @@ Result<std::vector<std::filesystem::path>> one_or_more_paths(
   std::vector<std::filesystem::path> values;
   while (index + 1U < arguments.size() && !is_option(arguments[index + 1U])) {
     ++index;
-    values.emplace_back(arguments[index]);
+    std::wstring value = arguments[index];
+    if (value == L",") {
+      continue;
+    }
+    if (!value.empty() && value.back() == L',') {
+      value.pop_back();
+    }
+    if (!value.empty()) {
+      values.emplace_back(std::move(value));
+    }
   }
   if (values.empty()) {
     return Result<std::vector<std::filesystem::path>>::failure(

@@ -69,6 +69,23 @@ TEST_CASE("cyan and cgen accept grouped short flags") {
   CHECK(cgen_result.value().thin);
 }
 
+TEST_CASE("cyan preserves Unicode paths and accepts comma-separated file arguments") {
+  auto parsed = cyan::parse_cyan_arguments(
+      {L"-i", L"C:\\Girdi\\uygulama.ipa", L"-f",
+       L"C:\\Users\\cnylm\\OneDrive\\Masaüstü\\SCL\\applefavour.dylib,",
+       L"C:\\Users\\cnylm\\OneDrive\\Masaüstü\\YT\\Extension.appex,", L",",
+       L"C:\\Debs\\tweak.deb", L"-o", L"C:\\Çıktı\\modlu.ipa"});
+
+  REQUIRE(parsed);
+  REQUIRE(parsed.value().injected_items.size() == 3U);
+  CHECK(parsed.value().injected_items[0].native() ==
+        L"C:\\Users\\cnylm\\OneDrive\\Masaüstü\\SCL\\applefavour.dylib");
+  CHECK(parsed.value().injected_items[1].native() ==
+        L"C:\\Users\\cnylm\\OneDrive\\Masaüstü\\YT\\Extension.appex");
+  CHECK(parsed.value().injected_items[2].native() == L"C:\\Debs\\tweak.deb");
+  CHECK(parsed.value().output.native() == L"C:\\Çıktı\\modlu.ipa");
+}
+
 TEST_CASE("grouped short flags reject value-taking options") {
   auto result = cyan::parse_cyan_arguments({L"-i", L"Test.ipa", L"-uc"});
   REQUIRE_FALSE(result);

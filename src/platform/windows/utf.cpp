@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <limits>
 
 namespace cyan::platform {
@@ -10,6 +11,51 @@ namespace {
 template <typename T>
 bool fits_int(T value) {
   return value <= static_cast<T>((std::numeric_limits<int>::max)());
+}
+
+void write_handle(DWORD standard_handle, std::wstring_view value) {
+  if (value.empty()) {
+    return;
+  }
+  const HANDLE handle = GetStdHandle(standard_handle);
+  if (handle == nullptr || handle == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  DWORD console_mode = 0;
+  if (GetConsoleMode(handle, &console_mode) != 0) {
+    std::size_t offset = 0;
+    while (offset < value.size()) {
+      const auto remaining = value.size() - offset;
+      const DWORD chunk =
+          static_cast<DWORD>((std::min)(remaining, static_cast<std::size_t>(32767U)));
+      DWORD written = 0;
+      if (WriteConsoleW(handle, value.data() + offset, chunk, &written, nullptr) == 0 ||
+          written == 0U) {
+        return;
+      }
+      offset += written;
+    }
+    return;
+  }
+
+  auto encoded = utf8_from_wide(value);
+  if (!encoded) {
+    return;
+  }
+  const std::string& bytes = encoded.value();
+  std::size_t offset = 0;
+  while (offset < bytes.size()) {
+    const auto remaining = bytes.size() - offset;
+    const DWORD chunk =
+        static_cast<DWORD>((std::min)(remaining, static_cast<std::size_t>(32767U)));
+    DWORD written = 0;
+    if (WriteFile(handle, bytes.data() + offset, chunk, &written, nullptr) == 0 ||
+        written == 0U) {
+      return;
+    }
+    offset += written;
+  }
 }
 
 }  // namespace
@@ -87,6 +133,14 @@ std::wstring invariant_lower(std::wstring_view value) {
     return std::wstring(value);
   }
   return output;
+}
+
+void write_stdout(std::wstring_view value) {
+  write_handle(STD_OUTPUT_HANDLE, value);
+}
+
+void write_stderr(std::wstring_view value) {
+  write_handle(STD_ERROR_HANDLE, value);
 }
 
 }  // namespace cyan::platform
