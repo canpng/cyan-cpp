@@ -1,0 +1,328 @@
+#include <Windows.h>
+#include <archive.h>
+#include <archive_entry.h>
+
+#include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
+
+#include "cyan/archive/archive_service.hpp"
+#include "cyan/archive/cyan_archive.hpp"
+#include "cyan/core/cyan_pipeline.hpp"
+#include "cyan/macho/macho_inspector.hpp"
+#include "cyan/plist/plist_document.hpp"
+
+namespace {
+
+class TemporaryDirectory {
+ public:
+  TemporaryDirectory() {
+    const auto ticks = static_cast<unsigned long long>(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    path_ = std::filesystem::temp_directory_path() /
+            (L"cyan-pipeline-test-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+             std::to_wstring(ticks));
+    std::filesystem::create_directories(path_);
+  }
+
+  ~TemporaryDirectory() {
+    std::error_code error;
+    std::filesystem::remove_all(path_, error);
+  }
+
+  [[nodiscard]] const std::filesystem::path& path() const { return path_; }
+
+ private:
+  std::filesystem::path path_;
+};
+
+void put32(std::vector<std::uint8_t>& bytes, std::size_t offset, std::uint32_t value) {
+  bytes[offset] = static_cast<std::uint8_t>(value & 0xffU);
+  bytes[offset + 1U] = static_cast<std::uint8_t>((value >> 8U) & 0xffU);
+  bytes[offset + 2U] = static_cast<std::uint8_t>((value >> 16U) & 0xffU);
+  bytes[offset + 3U] = static_cast<std::uint8_t>((value >> 24U) & 0xffU);
+}
+
+void put64(std::vector<std::uint8_t>& bytes, std::size_t offset, std::uint64_t value) {
+  put32(bytes, offset, static_cast<std::uint32_t>(value));
+  put32(bytes, offset + 4U, static_cast<std::uint32_t>(value >> 32U));
+}
+
+void put_name(std::vector<std::uint8_t>& bytes, std::size_t offset, std::string_view name) {
+  for (std::size_t index = 0; index < name.size() && index < 16U; ++index) {
+    bytes[offset + index] = static_cast<std::uint8_t>(name[index]);
+  }
+}
+
+std::vector<std::uint8_t> synthetic_executable_bytes() {
+  std::vector<std::uint8_t> bytes(0x800U, 0U);
+  put32(bytes, 0U, 0xfeedfacfU);
+  put32(bytes, 4U, 0x0100000cU);
+  put32(bytes, 12U, 2U);
+  put32(bytes, 16U, 1U);
+  put32(bytes, 20U, 152U);
+
+  constexpr std::size_t segment = 32U;
+  put32(bytes, segment, 0x19U);
+  put32(bytes, segment + 4U, 152U);
+  put_name(bytes, segment + 8U, "__TEXT");
+  put64(bytes, segment + 24U, 0x100000000ULL);
+  put64(bytes, segment + 32U, 0x1000U);
+  put64(bytes, segment + 48U, bytes.size());
+  put32(bytes, segment + 64U, 1U);
+
+  constexpr std::size_t section = segment + 72U;
+  put_name(bytes, section, "__text");
+  put_name(bytes, section + 16U, "__TEXT");
+  put64(bytes, section + 32U, 0x100000400ULL);
+  put64(bytes, section + 40U, 4U);
+  put32(bytes, section + 48U, 0x400U);
+  return bytes;
+}
+
+void write_synthetic_executable(const std::filesystem::path& path) {
+  const auto bytes = synthetic_executable_bytes();
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  output.write(reinterpret_cast<const char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+}
+
+void add_archive_entry(archive* writer, std::string_view name,
+                       const std::vector<std::uint8_t>& bytes) {
+  archive_entry* entry = archive_entry_new();
+  REQUIRE(entry != nullptr);
+  archive_entry_set_pathname(entry, std::string(name).c_str());
+  archive_entry_set_filetype(entry, AE_IFREG);
+  archive_entry_set_perm(entry, 0755);
+  archive_entry_set_size(entry, static_cast<la_int64_t>(bytes.size()));
+  REQUIRE(archive_write_header(writer, entry) == ARCHIVE_OK);
+  REQUIRE(archive_write_data(writer, bytes.data(), bytes.size()) ==
+          static_cast<la_ssize_t>(bytes.size()));
+  archive_entry_free(entry);
+}
+
+void write_test_deb(const std::filesystem::path& deb, const std::filesystem::path& temporary_tar) {
+  archive* tar = archive_write_new();
+  REQUIRE(tar != nullptr);
+  REQUIRE(archive_write_set_format_pax_restricted(tar) == ARCHIVE_OK);
+  REQUIRE(archive_write_open_filename_w(tar, temporary_tar.c_str()) == ARCHIVE_OK);
+  add_archive_entry(tar, "Library/MobileSubstrate/DynamicLibraries/DebExample.dylib",
+                    synthetic_executable_bytes());
+  REQUIRE(archive_write_close(tar) == ARCHIVE_OK);
+  REQUIRE(archive_write_free(tar) == ARCHIVE_OK);
+
+  std::ifstream input(temporary_tar, std::ios::binary | std::ios::ate);
+  REQUIRE(input);
+  const auto length = input.tellg();
+  REQUIRE(length > 0);
+  std::vector<std::uint8_t> tar_bytes(static_cast<std::size_t>(length));
+  input.seekg(0);
+  input.read(reinterpret_cast<char*>(tar_bytes.data()),
+             static_cast<std::streamsize>(tar_bytes.size()));
+  REQUIRE(input);
+
+  archive* ar = archive_write_new();
+  REQUIRE(ar != nullptr);
+  REQUIRE(archive_write_set_format_ar_svr4(ar) == ARCHIVE_OK);
+  REQUIRE(archive_write_open_filename_w(ar, deb.c_str()) == ARCHIVE_OK);
+  add_archive_entry(ar, "debian-binary", {'2', '.', '0', '\n'});
+  add_archive_entry(ar, "data.tar", tar_bytes);
+  REQUIRE(archive_write_close(ar) == ARCHIVE_OK);
+  REQUIRE(archive_write_free(ar) == ARCHIVE_OK);
+}
+
+void write_test_bitmap(const std::filesystem::path& path) {
+  std::vector<std::uint8_t> bytes(58U, 0U);
+  bytes[0] = 'B';
+  bytes[1] = 'M';
+  put32(bytes, 2U, static_cast<std::uint32_t>(bytes.size()));
+  put32(bytes, 10U, 54U);
+  put32(bytes, 14U, 40U);
+  put32(bytes, 18U, 1U);
+  put32(bytes, 22U, 1U);
+  bytes[26U] = 1U;
+  bytes[28U] = 24U;
+  put32(bytes, 34U, 4U);
+  bytes[54U] = 0x20U;
+  bytes[55U] = 0x80U;
+  bytes[56U] = 0xe0U;
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  output.write(reinterpret_cast<const char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+}
+
+void make_app(const std::filesystem::path& app) {
+  std::filesystem::create_directories(app);
+  auto plist = cyan::PlistDocument::create_dictionary();
+  REQUIRE(plist);
+  REQUIRE(plist.value().set_string("CFBundleExecutable", "Synthetic"));
+  REQUIRE(plist.value().set_string("CFBundleIdentifier", "example.original"));
+  REQUIRE(plist.value().set_string("CFBundleName", "Original"));
+  REQUIRE(plist.value().save(app / L"Info.plist", cyan::PlistFormat::binary));
+  write_synthetic_executable(app / L"Synthetic");
+}
+
+}  // namespace
+
+TEST_CASE("pipeline transforms a synthetic app bundle end to end") {
+  TemporaryDirectory fixture;
+  const auto input = fixture.path() / L"Input.app";
+  const auto output = fixture.path() / L"Output.app";
+  const auto icon = fixture.path() / L"icon.bmp";
+  make_app(input);
+  write_test_bitmap(icon);
+  std::filesystem::create_directories(input / L"Watch");
+  std::filesystem::create_directories(input / L"PlugIns");
+
+  cyan::CyanOptions options;
+  options.input = input;
+  options.output = output;
+  options.name = L"Yeni Ad";
+  options.version = L"2.5";
+  options.bundle_id = L"example.changed";
+  options.minimum_os = L"15.0";
+  options.icon = icon;
+  options.no_watch = true;
+  options.remove_extensions = true;
+  options.enable_documents = true;
+  options.overwrite = true;
+
+  cyan::CyanPipeline pipeline;
+  auto transformed = pipeline.run(std::move(options));
+  REQUIRE(transformed);
+  REQUIRE(std::filesystem::is_regular_file(output / L"Synthetic"));
+  REQUIRE_FALSE(std::filesystem::exists(output / L"Watch"));
+  REQUIRE_FALSE(std::filesystem::exists(output / L"PlugIns"));
+
+  auto plist = cyan::PlistDocument::load(output / L"Info.plist");
+  REQUIRE(plist);
+  CHECK(plist.value().string("CFBundleName") == "Yeni Ad");
+  CHECK(plist.value().string("CFBundleDisplayName") == "Yeni Ad");
+  CHECK(plist.value().string("CFBundleVersion") == "2.5");
+  CHECK(plist.value().string("CFBundleShortVersionString") == "2.5");
+  CHECK(plist.value().string("CFBundleIdentifier") == "example.changed");
+  CHECK(plist.value().string("MinimumOSVersion") == "15.0");
+  CHECK(plist.value().boolean("UISupportsDocumentBrowser") == true);
+  CHECK(plist.value().boolean("UIFileSharingEnabled") == true);
+  REQUIRE(plist.value().string("CFBundleIconName"));
+
+  std::size_t generated_icons = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(output)) {
+    if (entry.is_regular_file() && entry.path().extension() == L".png" &&
+        entry.path().filename().native().starts_with(L"cyan_")) {
+      ++generated_icons;
+    }
+  }
+  CHECK(generated_icons == 2U);
+}
+
+TEST_CASE("cgen output can be read back with ordered cyan semantics") {
+  TemporaryDirectory fixture;
+  cyan::CgenOptions generated;
+  generated.output = fixture.path() / L"settings.cyan";
+  generated.name = L"Configured";
+  generated.version = L"7";
+  generated.enable_documents = true;
+
+  cyan::CyanArchiveWriter writer;
+  REQUIRE(writer.write(generated));
+
+  cyan::CyanOptions applied;
+  cyan::CyanArchiveReader reader;
+  REQUIRE(reader.apply(generated.output, fixture.path() / L"extracted", applied));
+  CHECK(applied.name == L"Configured");
+  CHECK(applied.version == L"7");
+  CHECK(applied.enable_documents);
+}
+
+TEST_CASE("pipeline injects a dylib through the native load-command engine") {
+  TemporaryDirectory fixture;
+  const auto input = fixture.path() / L"Inject.app";
+  const auto output = fixture.path() / L"Injected.app";
+  const auto tweak = fixture.path() / L"Example.dylib";
+  make_app(input);
+  write_synthetic_executable(tweak);
+
+  cyan::CyanOptions options;
+  options.input = input;
+  options.output = output;
+  options.injected_items.push_back(tweak);
+  options.overwrite = true;
+
+  cyan::CyanPipeline pipeline;
+  auto transformed = pipeline.run(std::move(options));
+  REQUIRE(transformed);
+  REQUIRE(std::filesystem::is_regular_file(output / L"Frameworks" / L"Example.dylib"));
+
+  cyan::MachOInspector inspector;
+  auto inspected = inspector.inspect(output / L"Synthetic");
+  REQUIRE(inspected);
+  REQUIRE(inspected.value().slices.size() == 1U);
+  CHECK(inspected.value().slices.front().dependencies ==
+        std::vector<std::string>{"@rpath/Example.dylib"});
+  CHECK(inspected.value().slices.front().rpaths ==
+        std::vector<std::string>{"@executable_path/Frameworks"});
+}
+
+TEST_CASE("pipeline extracts DEB data archives and injects discovered dylibs") {
+  TemporaryDirectory fixture;
+  const auto input = fixture.path() / L"DebInput.app";
+  const auto output = fixture.path() / L"DebOutput.app";
+  const auto deb = fixture.path() / L"example.deb";
+  make_app(input);
+  write_test_deb(deb, fixture.path() / L"data.tar");
+
+  cyan::CyanOptions options;
+  options.input = input;
+  options.output = output;
+  options.injected_items.push_back(deb);
+  options.overwrite = true;
+
+  cyan::CyanPipeline pipeline;
+  auto transformed = pipeline.run(std::move(options));
+  REQUIRE(transformed);
+  REQUIRE(std::filesystem::is_regular_file(output / L"Frameworks" / L"DebExample.dylib"));
+
+  cyan::MachOInspector inspector;
+  auto inspected = inspector.inspect(output / L"Synthetic");
+  REQUIRE(inspected);
+  CHECK(inspected.value().slices.front().dependencies ==
+        std::vector<std::string>{"@rpath/DebExample.dylib"});
+}
+
+TEST_CASE("pipeline accepts TIPA and atomically publishes IPA output") {
+  TemporaryDirectory fixture;
+  const auto unicode_root = fixture.path() / L"Türkçe 測試";
+  const auto package_root = unicode_root / L"package";
+  make_app(package_root / L"Payload" / L"Arşiv 測試.app");
+
+  cyan::ArchiveService archives;
+  const auto input = unicode_root / L"Girdi.tipa";
+  auto created = archives.create_zip(package_root, input, 1, false);
+  const std::string create_message = created ? std::string{} : created.error().message;
+  INFO(create_message);
+  REQUIRE(created);
+
+  cyan::CyanOptions options;
+  options.input = input;
+  options.output = unicode_root / L"Çıktı.ipa";
+  options.name = L"Archive Result";
+  options.compression_level = 9;
+  options.overwrite = true;
+
+  cyan::CyanPipeline pipeline;
+  REQUIRE(pipeline.run(std::move(options)));
+
+  const auto extracted = unicode_root / L"published";
+  REQUIRE(archives.extract(unicode_root / L"Çıktı.ipa", extracted));
+  const auto published_app = extracted / L"Payload" / L"Arşiv 測試.app";
+  REQUIRE(std::filesystem::is_regular_file(published_app / L"Synthetic"));
+
+  auto plist = cyan::PlistDocument::load(published_app / L"Info.plist");
+  REQUIRE(plist);
+  CHECK(plist.value().string("CFBundleName") == "Archive Result");
+}

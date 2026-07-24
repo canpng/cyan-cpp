@@ -1,0 +1,50 @@
+name: Dependency audit
+
+on:
+  pull_request:
+    paths:
+      - vcpkg.json
+      - vcpkg-configuration.json
+      - .github/workflows/dependency-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: windows-2022
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_DISABLE_METRICS: "1"
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: microsoft/vcpkg
+          ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+          path: vcpkg
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: |
+          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          .\vcpkg\vcpkg.exe install --triplet x64-windows --x-manifest-root .
+          .\vcpkg\vcpkg.exe list | Set-Content dependency-versions.txt -Encoding utf8
+          Get-ChildItem vcpkg_installed\x64-windows\share -Filter copyright -Recurse | ForEach-Object {
+            "===== $($_.Directory.Name) ====="
+            Get-Content -LiteralPath $_.FullName
+          } | Set-Content dependency-notices.txt -Encoding utf8
+          .\scripts\generate-sbom.ps1 -OutputPath dependency-sbom.spdx.json
+
+      - name: Upload audit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dependency-audit
+          path: |
+            dependency-versions.txt
+            dependency-notices.txt
+            dependency-sbom.spdx.json
+          if-no-files-found: error
+

@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_DISABLE_METRICS: "1"
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Checkout pinned vcpkg
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: microsoft/vcpkg
+          ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+          path: vcpkg
+
+      - name: Initialise MSVC x64 environment
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          Import-Module "$installation\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $installation -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          Get-ChildItem Env: | ForEach-Object { "$($_.Name)=$($_.Value)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append }
+
+      - name: Restore dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: release-vcpkg-windows-2022-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          cmake --preset windows-release -DCYAN_WARNINGS_AS_ERRORS=ON
+          cmake --build --preset windows-release
+          ctest --preset windows-release
+
+      - name: Assemble release
+        shell: pwsh
+        run: |
+          cmake --install out\build\windows-release --prefix out\package
+          Compress-Archive -Path out\package\* -DestinationPath cyan-cpp-windows-x64.zip -CompressionLevel Optimal -Force
+          (Get-FileHash cyan-cpp-windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  cyan-cpp-windows-x64.zip' | Set-Content cyan-cpp-windows-x64.sha256 -Encoding ascii
+          .\scripts\generate-sbom.ps1 -OutputPath cyan-cpp-windows-x64.spdx.json
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ github.ref_name }}' cyan-cpp-windows-x64.zip cyan-cpp-windows-x64.sha256 cyan-cpp-windows-x64.spdx.json --verify-tag --generate-notes
+

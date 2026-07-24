@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "cyan-cpp",
+  "version-string": "0.1.0-dev",
+  "description": "Native Windows C++20 rewrite of cyan 1.4.4",
+  "license": "MIT",
+  "supports": "windows & x64",
+  "dependencies": [
+    {
+      "name": "lief",
+      "default-features": false
+    },
+    {
+      "name": "libarchive",
+      "default-features": false,
+      "features": [
+        "bzip2",
+        "lzma",
+        "zstd"
+      ]
+    },
+    "libplist",
+    "nlohmann-json",
+    {
+      "name": "catch2",
+      "host": false
+    }
+  ],
+  "overrides": [
+    {
+      "name": "lief",
+      "version": "0.17.6"
+    },
+    {
+      "name": "libarchive",
+      "version": "3.8.7"
+    },
+    {
+      "name": "libplist",
+      "version": "2.7.0"
+    },
+    {
+      "name": "nlohmann-json",
+      "version": "3.12.0",
+      "port-version": 2
+    },
+    {
+      "name": "catch2",
+      "version": "3.15.1"
+    }
+  ]
+}
