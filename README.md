@@ -8,7 +8,7 @@ dependencies.
 
 > **Development status:** the native IPA/TIPA/app pipeline, CLI programs,
 > archive and plist layers, WIC icon processing, dependency placement, native
-> Mach-O injection, LIEF fallback and external `ldid.exe` adapter are enabled.
+> Mach-O injection, LIEF fallback and bundled Windows ad-hoc signing are enabled.
 > Synthetic end-to-end tests cover app, IPA/TIPA, DEB, `.cyan`, metadata, icon
 > and dylib workflows. A differential corpus and hosted MSVC release evidence
 > are still required before declaring drop-in compatibility.
@@ -45,8 +45,8 @@ Windows adapters.
 - XML/binary plist metadata, extension, watch and document-option handling
 - Windows Imaging Component icon decode, resize and PNG encoding
 - ordered `.cyan` reading, overlay application and file payloads
-- arm64 thinning, bundled compatibility frameworks and optional `ldid.exe`
-  signing
+- arm64 thinning, bundled compatibility frameworks and automatic Windows
+  ad-hoc signing
 
 The precise implementation state is in
 [docs/feature-parity-matrix.md](docs/feature-parity-matrix.md).
@@ -69,10 +69,11 @@ in-place writes or unchecked Mach-O arithmetic.
   materialised.
 - The archive writer consistently excludes hidden IPA content when requested;
   Python cyan changed behaviour depending on the presence of external `zip`.
-- `ldid.exe` is not redistributed. `-x`/`--fakesign` and entitlement
-  extraction require an explicit `--ldid` path; a missing signer is a hard
-  error. Injection without signing removes stale signatures but cannot restore
-  their entitlements.
+- GitHub release packages include pinned Procursus `ldid.exe`
+  2.1.5-procursus7 beside
+  `cyan.exe`. `-s`/`--fakesign` and entitlement restoration therefore work
+  without an extra path. `--ldid PATH` remains available as an explicit
+  override.
 - The GitHub MSVC workflows are defined, but their hosted results are not
   claimed by this source checkout.
 
@@ -140,6 +141,7 @@ cyan -i App.ipa -o App-patched.ipa -f Tweak.dylib --overwrite
 cyan -i App.tipa -z Base.cyan DeviceOverrides.cyan -c 9
 cyan -i App.app -n "New Name" -b dev.example.new -w -e
 cyan -i App.ipa -f Tweak.deb --dependency-dir C:\cyan-dependencies
+cyan -i App.ipa -f Tweak.deb -uwdsq --overwrite -o App-patched.ipa
 ```
 
 Run `cyan --help` for the complete option list. These examples execute through
@@ -187,11 +189,11 @@ See [docs/dependency-map.md](docs/dependency-map.md) and
 
 ## Signing backend status
 
-Signing is deliberately separated from injection. The implemented backend is
-an explicit `ldid.exe` adapter supporting entitlement extraction and ad-hoc
-signing; native and LIEF code remove obsolete signatures before mutation. No
-code path reports a successful fake-sign operation without a configured
-backend and verification.
+Signing is deliberately separated from injection. Release packages use the
+bundled, pinned official Windows `ldid.exe` for entitlement extraction and
+ad-hoc signing, then verify that every Mach-O slice received a signature.
+`--ldid PATH` can override the bundled executable. The original XML entitlement
+blob is preserved across injection.
 
 ## Security considerations
 

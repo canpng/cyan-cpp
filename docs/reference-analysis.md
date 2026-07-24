@@ -39,7 +39,7 @@ and dependency-name fixes prompted by
 | `cyan/tbhtypes/executable.py` | Encryption inspection, signature removal, thinning, dependency discovery/rewrites | `MachOInspector`, `MachODependencyEditor`, `FatBinary`, `ISigningBackend` |
 | `cyan/tbhtypes/main_executable.py` | Injection orchestration, rpath, DEB expansion, item placement, entitlement restore, insert_dylib/LIEF selection | `InjectionPlanner`, `InsertDylibEngine`, `LiefMachOBackend`, `DependencyResolver`, `EntitlementManager` |
 | `cyan/tbhtypes/leaving_cm.py` | Announces temporary directory cleanup | RAII destructor in `TemporaryWorkspace` |
-| `cyan/tools/*` | Platform binaries: `otool`, `lipo`, `install_name_tool`, `insert_dylib`, `ldid` | Direct LIEF/native APIs; optional external signing backend only |
+| `cyan/tools/*` | Platform binaries: `otool`, `lipo`, `install_name_tool`, `insert_dylib`, `ldid` | Direct LIEF/native APIs; bundled official Windows ldid with optional path override |
 | `cyan/extras/*` | Prebuilt CydiaSubstrate, Orion and Cephei-family frameworks plus zero-requirements blob | Dependency assets and `--dependency-dir` integration |
 | `cgen/__main__.py` | Validates options and writes ZIP-based `.cyan` archives | `CyanArchiveWriter`, `src/cgen/main.cpp` |
 | `MANIFEST.in` | Ships `cyan/extras` and `cyan/tools` | Explicit release manifest; no opaque inherited binaries |

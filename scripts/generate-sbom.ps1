@@ -45,6 +45,16 @@ $packages = @(
     licenseConcluded = 'MIT'
     licenseDeclared = 'MIT'
     copyrightText = 'NOASSERTION'
+  },
+  @{
+    SPDXID = 'SPDXRef-Package-ldid'
+    name = 'ldid'
+    versionInfo = '2.1.5-procursus7'
+    downloadLocation = 'https://github.com/ProcursusTeam/ldid/releases/tag/v2.1.5-procursus7'
+    filesAnalyzed = $false
+    licenseConcluded = 'AGPL-3.0-only'
+    licenseDeclared = 'AGPL-3.0-only'
+    copyrightText = 'Copyright ldid contributors'
   }
 )
 
@@ -68,6 +78,11 @@ $relationships = @(
     spdxElementId = 'SPDXRef-Package-cyan-cpp'
     relationshipType = 'DEPENDS_ON'
     relatedSpdxElement = 'SPDXRef-Package-nlohmann-json'
+  },
+  @{
+    spdxElementId = 'SPDXRef-Package-cyan-cpp'
+    relationshipType = 'DEPENDS_ON'
+    relatedSpdxElement = 'SPDXRef-Package-ldid'
   }
 )
 
@@ -85,5 +100,10 @@ $document = @{
   relationships = $relationships
 }
 
-$document | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
-
+$json = $document | ConvertTo-Json -Depth 8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText(
+  [System.IO.Path]::GetFullPath($OutputPath),
+  "$json`n",
+  $utf8NoBom
+)

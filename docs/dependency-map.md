@@ -18,7 +18,7 @@ Versions below are the exact versions at that baseline.
 | Python `plistlib` | [libplist](https://github.com/libimobiledevice/libplist) C API | 2.7.0, shared DLL only | XML and binary plist |
 | Python `json` | [nlohmann/json](https://github.com/nlohmann/json) | 3.12.0 | `.cyan` configuration and inspection manifests |
 | Pillow | Windows Imaging Component | Windows SDK | Decode, resize and PNG encode icons |
-| `ldid` | User-configured external `ldid.exe` adapter | Not redistributed | Entitlement extraction and ad-hoc signing |
+| `ldid` | Bundled official [Procursus ldid](https://github.com/ProcursusTeam/ldid) | 2.1.5-procursus7 Windows x64, SHA-256 pinned | Entitlement preservation and ad-hoc signing |
 | Python `tempfile` | `TemporaryWorkspace` | Project code | RAII cleanup |
 | Python `os.path`/`shutil` | `std::filesystem` + Win32 atomic replace | C++20/Windows | Unicode paths and safe publication |
 | Python `argparse` | Project CLI parser | Project code | Exact short/long option compatibility without an added dependency |
@@ -51,7 +51,8 @@ Versions below are the exact versions at that baseline.
 `cyan_macho` has no LIEF dependency. `cyan_lief` is the sole adapter that
 includes LIEF headers. `cyan_archive` owns libarchive, `cyan_plist` owns
 libplist, `cyan_image` owns WIC/COM, and `cyan_signing` owns process creation
-for an explicitly configured signer. `cyan_pipeline` composes those adapters.
+for the bundled or explicitly configured ldid signer.
+`cyan_pipeline` composes those adapters.
 
 No dependency may be fetched from a mutable branch. vcpkg's baseline pins port
 recipes and upstream checksums. LIEF is additionally pinned to release 0.17.6

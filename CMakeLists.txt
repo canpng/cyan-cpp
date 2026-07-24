@@ -25,6 +25,16 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 option(CYAN_BUILD_TESTS "Build the test suite" ON)
 option(CYAN_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 option(CYAN_STATIC_CORE "Build project libraries statically" ON)
+set(
+  CYAN_LDID_EXECUTABLE
+  ""
+  CACHE FILEPATH
+  "Pinned Windows x64 Procursus ldid executable to package beside cyan.exe"
+)
+
+if(CYAN_LDID_EXECUTABLE AND NOT EXISTS "${CYAN_LDID_EXECUTABLE}")
+  message(FATAL_ERROR "CYAN_LDID_EXECUTABLE does not exist: ${CYAN_LDID_EXECUTABLE}")
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(CompilerWarnings)
@@ -112,10 +122,12 @@ cyan_set_project_warnings(cyan_bundle)
 add_library(
   cyan_signing STATIC
   src/signing/external_ldid_backend.cpp
+  src/signing/windows_process_runner.cpp
 )
 target_link_libraries(
   cyan_signing
   PUBLIC cyan_core cyan_plist
+  PRIVATE cyan_macho
 )
 cyan_set_project_warnings(cyan_signing)
 
@@ -163,6 +175,18 @@ cyan_set_project_warnings(cyan)
 add_executable(cgen src/cgen/main.cpp)
 target_link_libraries(cgen PRIVATE cyan_core cyan_archive)
 cyan_set_project_warnings(cgen)
+
+if(CYAN_LDID_EXECUTABLE)
+  add_custom_command(
+    TARGET cyan
+    POST_BUILD
+    COMMAND
+      "${CMAKE_COMMAND}" -E copy_if_different
+      "${CYAN_LDID_EXECUTABLE}"
+      "$<TARGET_FILE_DIR:cyan>/ldid.exe"
+    VERBATIM
+  )
+endif()
 
 if(MINGW)
   target_link_options(cyan PRIVATE -municode)

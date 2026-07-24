@@ -35,6 +35,7 @@ configuration and injection:
   -x PLIST                     merge executable entitlements
 
 bundle operations:
+  short flags may be grouped (for example, -uwdsq)
   -u, --remove-supported-devices
   -w, --no-watch
   -d, --enable-documents
@@ -47,7 +48,7 @@ bundle operations:
 native extensions:
       --compatibility-mode cyan
       --dependency-dir PATH
-      --ldid PATH
+      --ldid PATH               override bundled signer with ldid.exe
 
 other:
   -h, --help
@@ -63,6 +64,7 @@ required:
   -o, --output PATH            output .cyan file
 
 content:
+  short flags may be grouped (for example, -uwdsq)
   -f FILE [FILE ...]           items placed below inject/
   -n NAME                      app name
   -v VERSION                   app version
@@ -142,25 +144,70 @@ Result<int> compression_level(std::wstring_view text) {
 }
 
 template <typename Options>
+void apply_short_flag(wchar_t flag, Options& options) {
+  switch (flag) {
+    case L'u':
+      options.remove_supported_devices = true;
+      break;
+    case L'w':
+      options.no_watch = true;
+      break;
+    case L'd':
+      options.enable_documents = true;
+      break;
+    case L's':
+      options.fakesign = true;
+      break;
+    case L'q':
+      options.thin = true;
+      break;
+    case L'e':
+      options.remove_extensions = true;
+      break;
+    case L'g':
+      options.remove_encrypted = true;
+      break;
+    case L'h':
+      options.show_help = true;
+      break;
+  }
+}
+
+bool is_short_flag(wchar_t flag) {
+  return flag == L'u' || flag == L'w' || flag == L'd' || flag == L's' || flag == L'q' ||
+         flag == L'e' || flag == L'g' || flag == L'h';
+}
+
+template <typename Options>
 void apply_common_flag(std::wstring_view argument, Options& options, bool& matched) {
   matched = true;
-  if (argument == L"-u" || argument == L"--remove-supported-devices") {
+  if (argument.size() >= 2U && argument.front() == L'-' && argument[1] != L'-') {
+    for (std::size_t index = 1U; index < argument.size(); ++index) {
+      if (!is_short_flag(argument[index])) {
+        matched = false;
+        return;
+      }
+    }
+    for (std::size_t index = 1U; index < argument.size(); ++index) {
+      apply_short_flag(argument[index], options);
+    }
+  } else if (argument == L"--remove-supported-devices") {
     options.remove_supported_devices = true;
-  } else if (argument == L"-w" || argument == L"--no-watch") {
+  } else if (argument == L"--no-watch") {
     options.no_watch = true;
-  } else if (argument == L"-d" || argument == L"--enable-documents") {
+  } else if (argument == L"--enable-documents") {
     options.enable_documents = true;
-  } else if (argument == L"-s" || argument == L"--fakesign") {
+  } else if (argument == L"--fakesign") {
     options.fakesign = true;
-  } else if (argument == L"-q" || argument == L"--thin") {
+  } else if (argument == L"--thin") {
     options.thin = true;
-  } else if (argument == L"-e" || argument == L"--remove-extensions") {
+  } else if (argument == L"--remove-extensions") {
     options.remove_extensions = true;
-  } else if (argument == L"-g" || argument == L"--remove-encrypted") {
+  } else if (argument == L"--remove-encrypted") {
     options.remove_encrypted = true;
   } else if (argument == L"--overwrite") {
     options.overwrite = true;
-  } else if (argument == L"-h" || argument == L"--help") {
+  } else if (argument == L"--help") {
     options.show_help = true;
   } else if (argument == L"--version") {
     options.show_version = true;

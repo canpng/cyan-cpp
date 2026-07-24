@@ -47,7 +47,7 @@ flowchart LR
 | `cyan_plist` | Typed plist values, XML/binary parse/write, metadata edits | shared libplist |
 | `cyan_macho` | Bounds-checked thin/FAT parse, inspection and injection | None |
 | `cyan_lief` | Public LIEF API adapter for edit/rebuild/fallback | LIEF 0.17.6 |
-| `cyan_signing` | `ISigningBackend`, entitlement ordering, external tool adapter | Optional user `ldid.exe` |
+| `cyan_signing` | `ISigningBackend`, entitlement ordering, bounded process adapter | Bundled Procursus `ldid.exe`; optional path override |
 | `cyan_image` | COM RAII, WIC decode/scale/PNG encode | Windows SDK |
 | `cyan_bundle` | App discovery, metadata, extension/watch and encryption policy | plist, native Mach-O |
 | `cyan_pipeline` | Transaction orchestration and output publication | All adapters |
@@ -172,11 +172,16 @@ public:
 };
 ```
 
-The first backend is an opt-in external signer configured by an absolute path.
+The default release backend is the official Windows x64 Procursus `ldid.exe`
+2.1.5-procursus7, discovered beside `cyan.exe`. It extracts the original XML
+entitlement slot before signature-removing mutations and performs ad-hoc
+signing afterwards. `--ldid PATH` overrides the bundled executable.
+
 Windows process creation uses an argument vector/quoted command line without a
-shell. Standard output/error are captured, exit status is checked, and
-temporary entitlement files are RAII-owned. With no backend, `--fakesign`
-returns `SigningBackendUnavailable`.
+shell. Exit status is checked, temporary entitlement files are RAII-owned, and
+the native inspector verifies that every output slice contains a signature.
+With no packaged or explicitly configured backend, `--fakesign` returns
+`SigningBackendUnavailable`.
 
 ## Concurrency
 

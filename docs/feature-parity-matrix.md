@@ -10,7 +10,7 @@ local Windows LLVM/MinGW validation build. Hosted MSVC and differential cyan
 | Build | C++20 Windows x64 project | Tested | Strict local build with warnings as errors |
 | Build | `cyan.exe` and `cgen.exe` native entry points | Tested | Help/version smoke tests |
 | Build | No Python/WSL/macOS runtime | Implemented | Native libraries and Win32 adapters only |
-| Build | No zsign or Unix command dependency | Implemented | Optional signer is explicit `ldid.exe` |
+| Build | No zsign or Unix command dependency | Implemented | Pinned official Windows Procursus ldid |
 | Input/output | `.ipa` and `.tipa` | Tested | Synthetic TIPA-to-IPA pipeline round trip |
 | Input/output | `.app` directory | Tested | Synthetic bundle transformation |
 | Input/output | Atomic output and overwrite policy | Tested | Sibling temporary publication |
@@ -53,9 +53,9 @@ local Windows LLVM/MinGW validation build. Hosted MSVC and differential cyan
 | Cyan | `inject/*`, `icon.idk`, `merge.plist`, entitlements | Implemented | Reader/writer payload mapping |
 | Cgen | Python-compatible arguments and ZIP layout | Tested | Parser and archive round-trip suites |
 | Signing | `ISigningBackend` separation | Implemented | Pipeline depends on interface |
-| Signing | Entitlement extraction/merge/restore | Implemented | External adapter; real signer not locally available |
+| Signing | Entitlement extraction/merge/restore | Tested | Procursus ldid extraction and signing round trip |
 | Signing | Native/LIEF signature removal | Tested | Mach-O fixture suite |
-| Signing | Ad-hoc signing | Implemented | Explicit `ldid.exe` adapter; requires user executable |
+| Signing | Ad-hoc signing | Tested | Bundled ldid 2.1.5-procursus7; explicit path override retained |
 | Testing | Synthetic thin/FAT/app/IPA/DEB fixtures | Tested | Single deterministic Catch2 executable |
 | Testing | Differential cyan manifest | Not started | Required for “Compatibility verified” |
 | CI | Windows 2022 Release build | Implemented | Single artifact-producing workflow; hosted result pending |

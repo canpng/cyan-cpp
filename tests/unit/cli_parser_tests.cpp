@@ -49,6 +49,32 @@ TEST_CASE("cyan rejects missing input and invalid compression") {
   CHECK(invalid.error().code == cyan::ErrorCode::invalid_compression_level);
 }
 
+TEST_CASE("cyan and cgen accept grouped short flags") {
+  auto cyan_result = cyan::parse_cyan_arguments({L"-i", L"Test.ipa", L"-uwdsqeg"});
+  REQUIRE(cyan_result);
+  CHECK(cyan_result.value().remove_supported_devices);
+  CHECK(cyan_result.value().no_watch);
+  CHECK(cyan_result.value().enable_documents);
+  CHECK(cyan_result.value().fakesign);
+  CHECK(cyan_result.value().thin);
+  CHECK(cyan_result.value().remove_extensions);
+  CHECK(cyan_result.value().remove_encrypted);
+
+  auto cgen_result = cyan::parse_cgen_arguments({L"-o", L"preset", L"-uwdsq"});
+  REQUIRE(cgen_result);
+  CHECK(cgen_result.value().remove_supported_devices);
+  CHECK(cgen_result.value().no_watch);
+  CHECK(cgen_result.value().enable_documents);
+  CHECK(cgen_result.value().fakesign);
+  CHECK(cgen_result.value().thin);
+}
+
+TEST_CASE("grouped short flags reject value-taking options") {
+  auto result = cyan::parse_cyan_arguments({L"-i", L"Test.ipa", L"-uc"});
+  REQUIRE_FALSE(result);
+  CHECK(result.error().code == cyan::ErrorCode::unknown_option);
+}
+
 TEST_CASE("cgen appends the cyan extension") {
   auto parsed = cyan::parse_cgen_arguments({L"-o", L"preset"});
   REQUIRE(parsed);

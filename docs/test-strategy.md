@@ -27,6 +27,7 @@ regression first receives a failing test and a minimal fixture, then a fix.
 | `.cyan` | required config, all payload names, ordered overlays, malformed/missing entries |
 | Dependency resolver | Substrate aliases, Orion implication, Cephei ordering, user inputs |
 | CLI | every short/long option, arity, compression range, Windows path forms, prompts |
+| Signing | ldid entitlement extraction, ad-hoc output, post-signature verification |
 
 ## Synthetic Mach-O fixtures
 
@@ -91,6 +92,7 @@ Required CI build:
 - paths containing Turkish/CJK characters, spaces, UNC syntax and a
   greater-than-260-character opt-in path;
 - release dependency/DLL inventory and SHA-256.
+- pinned Procursus ldid download/hash/version check and real synthetic Mach-O signing.
 
 CodeQL runs independently. Release tags repeat Release tests before packaging.
 Debug and newer-runner validation may be added temporarily when investigating

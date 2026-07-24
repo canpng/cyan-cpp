@@ -44,6 +44,15 @@ carried forward from the cyan 1.4.4 reference tree at commit
 and SHA-256 inventory are recorded in `assets/dependencies/README.md` and
 `assets/dependencies/SHA256SUMS`.
 
+## ProcursusTeam / ldid 2.1.5-procursus7
+
+The Windows x64 release package includes the official
+`ldid_w64_x86_64.exe` for entitlement extraction and ad-hoc Mach-O signing.
+CI verifies SHA-256
+`77a3f012e09619f8cfb5902eba38a00b973da5561ac592c530efb68155f7e6f3`
+and ships the upstream `COPYING` file beside `ldid.exe`.
+Source: https://github.com/ProcursusTeam/ldid/releases/tag/v2.1.5-procursus7
+
 ## Referenced projects
 
 The following projects informed compatibility research and may also provide
@@ -53,7 +62,6 @@ authorised implementation material:
 - Al4ise and mpelteshki / Azule
 - Tyilo / insert_dylib
 - LeanVel / insert_dylib
-- ProcursusTeam / ldid
 
 The project owner confirmed on 2026-07-24 that the permissions needed for
 use, modification, integration and redistribution were obtained in advance.

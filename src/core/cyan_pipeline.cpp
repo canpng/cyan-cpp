@@ -355,6 +355,19 @@ std::filesystem::path executable_directory() {
   }
 }
 
+std::optional<std::filesystem::path> bundled_signer() {
+  const auto program_directory = executable_directory();
+  if (program_directory.empty()) {
+    return std::nullopt;
+  }
+  const auto candidate = program_directory / L"ldid.exe";
+  std::error_code error;
+  if (std::filesystem::is_regular_file(candidate, error) && !error) {
+    return candidate;
+  }
+  return std::nullopt;
+}
+
 Result<std::filesystem::path> locate_common_framework(const CommonDependency& dependency,
                                                       const CyanOptions& options) {
   std::vector<std::filesystem::path> candidates;
@@ -528,6 +541,8 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
   std::unique_ptr<ISigningBackend> signing;
   if (options.ldid_path) {
     signing = std::make_unique<ExternalLdidSigningBackend>(*options.ldid_path);
+  } else if (auto signer = bundled_signer()) {
+    signing = std::make_unique<ExternalLdidSigningBackend>(std::move(*signer));
   }
   std::optional<PlistDocument> saved_entitlements;
   const bool main_had_signature =
@@ -767,10 +782,9 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
   }
   if (options.entitlements) {
     if (!signing) {
-      return Result<void>::failure(
-          {ErrorCode::signing_backend_unavailable,
-           "--entitlements requires --ldid with a working Windows ldid executable",
-           *options.entitlements});
+      return Result<void>::failure({ErrorCode::signing_backend_unavailable,
+                                    "--entitlements requires bundled ldid.exe or --ldid PATH",
+                                    *options.entitlements});
     }
     auto entitlements = PlistDocument::load(*options.entitlements);
     if (!entitlements) {
@@ -782,6 +796,15 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
     if (!signed_result) {
       return signed_result;
     }
+    auto combined = PlistDocument::create_dictionary();
+    if (!combined) {
+      return Result<void>::failure(combined.error());
+    }
+    auto extracted = signing->extractEntitlements(app.executable(), combined.value());
+    if (!extracted) {
+      return extracted;
+    }
+    saved_entitlements.emplace(combined.take_value());
     log(logger, L"[*] merged new entitlements");
   }
 
@@ -814,13 +837,16 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
     }
     if (options.fakesign) {
       if (!signing) {
-        return Result<void>::failure(
-            {ErrorCode::signing_backend_unavailable,
-             "--fakesign requires --ldid with a working Windows ldid executable",
-             {}});
+        return Result<void>::failure({ErrorCode::signing_backend_unavailable,
+                                      "--fakesign requires bundled ldid.exe or --ldid PATH",
+                                      {}});
       }
+      const std::optional<PlistDocument> no_entitlements;
       for (const auto& executable : executables.value()) {
-        auto signed_result = signing->signAdHoc(executable, std::nullopt);
+        const bool is_main =
+            executable.lexically_normal() == app.executable().lexically_normal();
+        const auto& signing_entitlements = is_main ? saved_entitlements : no_entitlements;
+        auto signed_result = signing->signAdHoc(executable, signing_entitlements);
         if (!signed_result) {
           return signed_result;
         }

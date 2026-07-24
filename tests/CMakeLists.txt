@@ -5,6 +5,7 @@ add_executable(
   unit/dependency_resolver_tests.cpp
   unit/insert_dylib_engine_tests.cpp
   unit/plist_document_tests.cpp
+  unit/signing_backend_tests.cpp
   integration/pipeline_tests.cpp
 )
 target_link_libraries(
@@ -15,8 +16,16 @@ target_link_libraries(
     cyan_macho
     cyan_pipeline
     cyan_plist
+    cyan_signing
     Catch2::Catch2WithMain
 )
 cyan_set_project_warnings(cyan_tests)
 
 add_test(NAME cyan_unit COMMAND cyan_tests)
+if(CYAN_LDID_EXECUTABLE)
+  set_tests_properties(
+    cyan_unit
+    PROPERTIES
+      ENVIRONMENT "CYAN_TEST_LDID=${CYAN_LDID_EXECUTABLE}"
+  )
+endif()
