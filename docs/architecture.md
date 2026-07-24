@@ -97,8 +97,8 @@ Archive entry names are decoded once, normalised lexically, and rejected when
 they contain:
 
 - an absolute/rooted/UNC/drive-qualified path;
-- `.` or `..` components;
-- an empty effective name or embedded NUL;
+- `..` components (`.` components are discarded during lexical normalisation);
+- an empty archive name or embedded NUL;
 - backslash-based traversal after separator normalisation;
 - an NTFS alternate-data-stream colon;
 - a trailing dot/space component;
@@ -108,6 +108,8 @@ they contain:
 Extraction manually creates directories and regular files beneath an already
 canonicalised root. Archive-created symlinks, hardlinks, reparse points and
 special files are rejected. A component is rechecked before each file open.
+The conventional POSIX tar root directory entry `./` is ignored; a regular
+file that normalises to the extraction root is rejected.
 Limits cover entry count, per-entry bytes, total expanded bytes and expansion
 ratio. Partially written files stay inside the temporary workspace.
 

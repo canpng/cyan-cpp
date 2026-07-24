@@ -105,12 +105,24 @@ void add_archive_entry(archive* writer, std::string_view name,
   archive_entry_free(entry);
 }
 
+void add_archive_directory(archive* writer, std::string_view name) {
+  archive_entry* entry = archive_entry_new();
+  REQUIRE(entry != nullptr);
+  archive_entry_set_pathname(entry, std::string(name).c_str());
+  archive_entry_set_filetype(entry, AE_IFDIR);
+  archive_entry_set_perm(entry, 0755);
+  archive_entry_set_size(entry, 0);
+  REQUIRE(archive_write_header(writer, entry) == ARCHIVE_OK);
+  archive_entry_free(entry);
+}
+
 void write_test_deb(const std::filesystem::path& deb, const std::filesystem::path& temporary_tar) {
   archive* tar = archive_write_new();
   REQUIRE(tar != nullptr);
   REQUIRE(archive_write_set_format_pax_restricted(tar) == ARCHIVE_OK);
   REQUIRE(archive_write_open_filename_w(tar, temporary_tar.c_str()) == ARCHIVE_OK);
-  add_archive_entry(tar, "Library/MobileSubstrate/DynamicLibraries/DebExample.dylib",
+  add_archive_directory(tar, "./");
+  add_archive_entry(tar, "./Library/MobileSubstrate/DynamicLibraries/DebExample.dylib",
                     synthetic_executable_bytes());
   REQUIRE(archive_write_close(tar) == ARCHIVE_OK);
   REQUIRE(archive_write_free(tar) == ARCHIVE_OK);

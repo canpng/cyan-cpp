@@ -4,7 +4,11 @@
 
 TEST_CASE("archive paths are normalised and reserved") {
   cyan::ArchivePathValidator validator;
-  auto accepted = validator.validate_and_reserve("Payload/Test.app/Info.plist");
+  auto archive_root = validator.validate_and_reserve("./");
+  REQUIRE(archive_root);
+  CHECK(archive_root.value().empty());
+
+  auto accepted = validator.validate_and_reserve("./Payload/./Test.app/Info.plist");
   REQUIRE(accepted);
   CHECK(accepted.value().generic_wstring() == L"Payload/Test.app/Info.plist");
 
@@ -14,9 +18,9 @@ TEST_CASE("archive paths are normalised and reserved") {
 }
 
 TEST_CASE("archive traversal and Windows hazards are rejected") {
-  for (const auto* path : {"../outside", "Payload/../../outside", "/absolute", "C:/absolute",
-                           "\\\\server\\share\\file", "Payload/file:stream", "Payload/CON.txt",
-                           "Payload/name.", "Payload/name ", "Payload//name"}) {
+  for (const auto* path : {"../outside", "./../outside", "Payload/../../outside", "/absolute",
+                           "C:/absolute", "\\\\server\\share\\file", "Payload/file:stream",
+                           "Payload/CON.txt", "Payload/name.", "Payload/name ", "Payload//name"}) {
     cyan::ArchivePathValidator validator;
     INFO(path);
     auto result = validator.validate_and_reserve(path);

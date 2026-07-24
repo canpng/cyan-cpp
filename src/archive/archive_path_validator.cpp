@@ -77,8 +77,18 @@ Result<std::filesystem::path> ArchivePathValidator::validate_and_reserve(
     const std::size_t end = separator == std::wstring::npos ? name.size() : separator;
     const std::wstring component = name.substr(position, end - position);
 
-    if (component.empty() || component == L"." || component == L"..") {
-      return unsafe("archive entry contains an empty, dot, or parent component");
+    if (component.empty()) {
+      return unsafe("archive entry contains an empty component");
+    }
+    if (component == L"..") {
+      return unsafe("archive entry contains a parent component");
+    }
+    if (component == L".") {
+      if (separator == std::wstring::npos) {
+        break;
+      }
+      position = separator + 1U;
+      continue;
     }
     if (component.find(L':') != std::wstring::npos) {
       return unsafe("archive entry contains an NTFS alternate-data-stream separator");
@@ -95,6 +105,13 @@ Result<std::filesystem::path> ArchivePathValidator::validate_and_reserve(
       break;
     }
     position = separator + 1U;
+  }
+
+  // POSIX tar producers commonly emit "." or "./" as the archive root. The
+  // extraction service permits the resulting empty path only for a directory
+  // entry and ignores it; regular files may never target the extraction root.
+  if (components.empty()) {
+    return Result<std::filesystem::path>::success({});
   }
 
   std::filesystem::path relative;

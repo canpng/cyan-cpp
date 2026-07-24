@@ -205,12 +205,20 @@ Result<void> ArchiveService::extract(const std::filesystem::path& archive_path,
       return Result<void>::failure(
           {ErrorCode::archive_unsafe_path, "archive links are not extracted", relative});
     }
+
+    const auto file_type = archive_entry_filetype(raw_entry);
+    if (relative.empty()) {
+      if (file_type == AE_IFDIR) {
+        continue;
+      }
+      return Result<void>::failure({ErrorCode::archive_unsafe_path,
+                                    "archive file resolves to the extraction root", relative});
+    }
     if (has_reparse_component(destination, relative)) {
       return Result<void>::failure(
           {ErrorCode::archive_unsafe_path, "archive path crosses a reparse point", relative});
     }
 
-    const auto file_type = archive_entry_filetype(raw_entry);
     if (file_type == AE_IFDIR) {
       std::filesystem::create_directories(target, filesystem_error);
       if (filesystem_error) {
