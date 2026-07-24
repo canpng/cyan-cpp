@@ -29,6 +29,12 @@ jobs:
           ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
           path: vcpkg
 
+      - name: Restore pinned vcpkg tool
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.VCPKG_ROOT }}\vcpkg.exe
+          key: vcpkg-tool-windows-cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+
       - name: Restore vcpkg binary cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -39,7 +45,7 @@ jobs:
 
       - name: Bootstrap vcpkg
         shell: pwsh
-        run: .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: .\scripts\bootstrap-vcpkg.ps1 -VcpkgRoot $env:VCPKG_ROOT
 
       - name: Fetch pinned Procursus ldid
         shell: pwsh

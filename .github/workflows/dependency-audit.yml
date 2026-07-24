@@ -5,6 +5,7 @@ on:
     paths:
       - vcpkg.json
       - vcpkg-configuration.json
+      - scripts/bootstrap-vcpkg.ps1
       - scripts/fetch-ldid.ps1
       - scripts/generate-sbom.ps1
       - .github/workflows/dependency-audit.yml
@@ -28,10 +29,16 @@ jobs:
           ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
           path: vcpkg
 
+      - name: Restore pinned vcpkg tool
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.VCPKG_ROOT }}\vcpkg.exe
+          key: vcpkg-tool-windows-cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+
       - name: Install locked dependencies
         shell: pwsh
         run: |
-          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          .\scripts\bootstrap-vcpkg.ps1 -VcpkgRoot $env:VCPKG_ROOT
           .\vcpkg\vcpkg.exe install --triplet x64-windows --x-manifest-root .
           .\vcpkg\vcpkg.exe list | Set-Content dependency-versions.txt -Encoding utf8
           Get-ChildItem vcpkg_installed\x64-windows\share -Filter copyright -Recurse | ForEach-Object {

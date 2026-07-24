@@ -26,6 +26,12 @@ jobs:
           ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
           path: vcpkg
 
+      - name: Restore pinned vcpkg tool
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.VCPKG_ROOT }}\vcpkg.exe
+          key: vcpkg-tool-windows-cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+
       - name: Restore vcpkg binary cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -44,7 +50,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          .\scripts\bootstrap-vcpkg.ps1 -VcpkgRoot $env:VCPKG_ROOT
           cmake -S . -B out\build\codeql `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
