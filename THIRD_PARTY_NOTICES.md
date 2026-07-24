@@ -41,7 +41,7 @@ Source: https://github.com/catchorg/Catch2/tree/v3.15.1
 Cephei, CepheiUI, CepheiPrefs, CydiaSubstrate and Orion framework payloads are
 carried forward from the cyan 1.4.4 reference tree at commit
 `04a40f7141fcc8ec6ad1e3ec8a389d870072e6e3`. Their release-package placement
-and SHA-256 inventory are recorded in `assets/dependencies/README.md` and
+is defined by the application, and their SHA-256 inventory is recorded in
 `assets/dependencies/SHA256SUMS`.
 
 ## ProcursusTeam / ldid 2.1.5-procursus7

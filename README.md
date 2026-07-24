@@ -1,234 +1,108 @@
 # cyan-cpp
 
-`cyan-cpp` is a C++20 rewrite of
-[asdfzxcvbn/pyzule-rw](https://github.com/asdfzxcvbn/pyzule-rw) for native
-Windows x64. The target command-line programs are `cyan.exe` and `cgen.exe`.
-Python, WSL, macOS, Xcode, zsign and Unix command-line tools are not runtime
-dependencies.
+[![Windows CI](https://github.com/canpng/cyan-cpp/actions/workflows/ci.yml/badge.svg)](https://github.com/canpng/cyan-cpp/actions/workflows/ci.yml)
 
-> **Development status:** the native IPA/TIPA/app pipeline, CLI programs,
-> archive and plist layers, WIC icon processing, dependency placement, native
-> Mach-O injection, LIEF fallback and bundled Windows ad-hoc signing are enabled.
-> Synthetic end-to-end tests cover app, IPA/TIPA, DEB, `.cyan`, metadata, icon
-> and dylib workflows. A differential corpus and hosted MSVC release evidence
-> are still required before declaring drop-in compatibility.
+A native C++20 rewrite of [cyan](https://github.com/asdfzxcvbn/pyzule-rw) for Windows x64. It modifies authorized `.ipa`, `.tipa`, and `.app` packages without requiring Python, WSL, macOS, or Xcode at runtime.
 
-## Supported Windows versions
+> [!WARNING]
+> This project is in preview. It is not yet verified as a drop-in replacement for cyan 1.4.4. Keep a copy of every input.
 
-- Windows 10 x64
-- Windows 11 x64
-- MSVC from Visual Studio Build Tools 2022 or newer
+## Features
 
-The first supported release platform is Windows. Core parsers avoid Windows
-types, while path publication, UTF conversion and WIC image operations are
-Windows adapters.
+- Inject `.dylib`, `.deb`, `.framework`, `.bundle`, and `.appex` content.
+- Apply ordered `.cyan` packages.
+- Edit metadata, icons, entitlements, extensions, and Watch content.
+- Inspect and rebuild thin or FAT Mach-O binaries.
+- Thin binaries to arm64 and preserve XML entitlements.
+- Ad-hoc sign with the packaged Procursus `ldid.exe`.
+- Handle spaces and Unicode characters in Windows paths.
 
-## Implemented features
+## Download
 
-- cyan 1.4.4-compatible option parsing and messages
-- native UTF-16 command line and `std::filesystem::path` handling
-- structured errors and RAII temporary workspaces
-- ZIP/AR/TAR/filter support through libarchive, without running external tools
-- archive traversal, device-name, ADS, duplicate-case, symlink/reparse and
-  decompression-limit checks
-- Python-compatible `cgen` options and `.cyan` archive layout
-- Substrate, Orion and Cephei-family dependency mappings
-- Mach-O 32/64 and FAT32/FAT64 parsing in both byte orders
-- architecture, dependency, rpath, encryption and signature inspection
-- native strong/weak dylib injection with duplicate and padding checks
-- terminal `LC_CODE_SIGNATURE`, `__LINKEDIT` and `LC_SYMTAB` repair
-- FAT slice rebuilding with offset, size and alignment updates
-- independent post-write parsing and atomic output replacement
-- LIEF 0.17.6 C++ fallback using a byte-vector parser for Unicode-safe paths
-- end-to-end IPA, TIPA and app-directory staging and publication
-- DEB discovery through AR and nested `data.tar.*` archives
-- XML/binary plist metadata, extension, watch and document-option handling
-- Windows Imaging Component icon decode, resize and PNG encoding
-- ordered `.cyan` reading, overlay application and file payloads
-- arm64 thinning, bundled compatibility frameworks and automatic Windows
-  ad-hoc signing
+Open [Windows CI](https://github.com/canpng/cyan-cpp/actions/workflows/ci.yml), choose a successful run, and download `cyan-cpp-windows-2022-x64`. Stable packages will appear under [Releases](https://github.com/canpng/cyan-cpp/releases) after the release checklist below is complete.
 
-The precise implementation state is in
-[docs/feature-parity-matrix.md](docs/feature-parity-matrix.md).
+## Quick start
 
-## Compatibility with cyan
+Open PowerShell or Command Prompt in the extracted folder:
 
-The behavioural baseline is cyan 1.4.4 plus the two post-tag fixes that still
-identify as 1.4.4 (`/usr/lib` and `@loader_path` dependencies). Processing
-order, basename collision rules, metadata keys, `.cyan` overlay order and CLI
-prefixes are documented in
-[docs/reference-analysis.md](docs/reference-analysis.md).
+```text
+cyan -i input.ipa -f Tweak.dylib -o output.ipa
+```
 
-Security bugs are not compatibility targets. The C++ implementation does not
-reproduce unsafe `extractall`, silent subprocess failures, non-atomic
-in-place writes or unchecked Mach-O arithmetic.
+Multiple `-f` inputs do not need commas. Short flags can be grouped:
 
-## Known differences
+```text
+cyan -i "C:\Apps\Input.ipa" ^
+  -f "C:\Tweaks\Tweak.dylib" "C:\Tweaks\Extension.appex" "C:\Tweaks\Package.deb" ^
+  -uwdsq -c 9 --overwrite -o "C:\Apps\Output.ipa"
+```
 
-- Archive links and Windows reparse points are currently rejected rather than
-  materialised.
-- The archive writer consistently excludes hidden IPA content when requested;
-  Python cyan changed behaviour depending on the presence of external `zip`.
-- GitHub release packages include pinned Procursus `ldid.exe`
-  2.1.5-procursus7 beside
-  `cyan.exe`. `-s`/`--fakesign` and entitlement restoration therefore work
-  without an extra path. `--ldid PATH` remains available as an explicit
-  override.
-- The GitHub MSVC workflows are defined, but their hosted results are not
-  claimed by this source checkout.
+For PowerShell, enter that command on one line or replace `^` with a backtick.
 
-## Download from GitHub Actions
+| Flag | Action |
+| --- | --- |
+| `-u` | Remove the supported-device list |
+| `-w` | Remove Watch content |
+| `-d` | Enable document and file sharing |
+| `-s` | Ad-hoc sign with `ldid` |
+| `-q` | Thin binaries to arm64 |
+| `-e` | Remove app extensions |
+| `-g` | Remove encrypted extensions |
 
-Open the repository's **Actions** tab, choose a successful **Windows CI** run,
-and download `cyan-cpp-windows-2022-x64`. The regular CI workflow deliberately
-uses one Windows 2022 Release build. CodeQL is weekly/manual, and tagged
-releases run only for `v*` tags.
+Run `cyan --help` for every option. Create a reusable package with:
 
-## Download from Releases
+```text
+cgen -o Tweaks.cyan -f Tweak.dylib Resources.bundle -n "My App"
+```
 
-Tags matching `v*` create:
+CI and release packages include the pinned official Windows build of Procursus `ldid` 2.1.5-procursus7. `--ldid PATH` overrides it.
 
-- `cyan-cpp-windows-x64.zip`
-- `cyan-cpp-windows-x64.sha256`
-- `cyan-cpp-windows-x64.spdx.json`
+## Build
 
-Do not treat a pre-1.0 archive as compatibility-complete; consult the parity
-matrix included by the corresponding source revision.
-
-## Local build
-
-Install Visual Studio Build Tools with the x64 C++ workload, CMake 3.28+,
-Ninja, Git and PowerShell. Clone the pinned vcpkg revision and set
-`VCPKG_ROOT`:
+Use Developer PowerShell for Visual Studio 2022 with the x64 C++ workload, CMake 3.28+, Ninja, and Git:
 
 ```powershell
-git clone https://github.com/microsoft/vcpkg
-git -C vcpkg checkout cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
-.\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-$env:VCPKG_ROOT = (Resolve-Path .\vcpkg)
+git clone https://github.com/microsoft/vcpkg ..\vcpkg
+git -C ..\vcpkg checkout cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+$env:VCPKG_ROOT = (Resolve-Path ..\vcpkg)
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-vcpkg.ps1 -VcpkgRoot $env:VCPKG_ROOT
 
-cmake --preset windows-release
+powershell -ExecutionPolicy Bypass -File .\scripts\fetch-ldid.ps1 -OutputPath .\out\tools\ldid.exe
+$ldid = (Resolve-Path .\out\tools\ldid.exe).Path
+
+cmake --preset windows-release -DCYAN_LDID_EXECUTABLE="$ldid"
 cmake --build --preset windows-release
 ctest --preset windows-release
 cmake --install out\build\windows-release --prefix out\package
 ```
 
-Dependencies are pinned by `vcpkg-configuration.json` and `vcpkg.json`. Do not
-update LIEF without running synthetic injection and differential compatibility
-tests.
+## Release status
 
-## GitHub Desktop workflow
+Automated tests cover the CLI, archives, plist data, Mach-O injection, DEB extraction, `.cyan` files, the package pipeline, and real `ldid` signing of generated fixtures.
 
-1. Clone the repository in GitHub Desktop.
-2. Make source or documentation changes.
-3. Review the exact diff and commit it.
-4. Push the current branch.
-5. Inspect Windows CI in GitHub Actions.
-6. Download the artifact only after all matrix jobs pass.
+Before a stable release, the project still needs:
 
-No submodule initialisation is required.
+- clean MSVC build, test, smoke-test, and packaging runs on fresh Windows hosts;
+- differential output tests against cyan 1.4.4;
+- representative authorized IPA, DEB, dylib, framework, and extension tests;
+- installation and launch checks on supported iOS devices;
+- large-package, low-disk-space, Unicode, long-path, malformed-input, fuzz, memory, and performance tests.
 
-## cyan CLI
+Until these pass, "buildable" does not mean "compatibility verified."
 
-```text
-cyan -i input.ipa [-o output.ipa] [options]
-```
+## Benchmarking against cyan
 
-Examples for the compatibility target:
+Compatibility and speed need separate results:
 
-```powershell
-cyan -i App.ipa -o App-patched.ipa -f Tweak.dylib --overwrite
-cyan -i App.tipa -z Base.cyan DeviceOverrides.cyan -c 9
-cyan -i App.app -n "New Name" -b dev.example.new -w -e
-cyan -i App.ipa -f Tweak.deb --dependency-dir C:\cyan-dependencies
-cyan -i App.ipa -f Tweak.deb -uwdsq --overwrite -o App-patched.ipa
-```
+1. Freeze a SHA-256-identified corpus covering small, medium, and large packages plus metadata, injection, DEB, extension, `.cyan`, signing, thinning, and Unicode cases.
+2. Run cyan 1.4.4 in WSL2 and `cyan-cpp` natively on the same Windows machine, using identical flags, one warm-up, and at least ten fresh runs.
+3. Record wall time, CPU time, peak memory, output size, exit code, versions, hardware, and the raw CSV or JSON results.
+4. Compare normalized file trees, plist values, Mach-O commands, dependencies, entitlements, and signatures. Ignore ZIP timestamps, entry order, compression bytes, and random icon names.
 
-Run `cyan --help` for the complete option list. These examples execute through
-the native pipeline in the current build.
+Because the two programs use different runtime environments, this measures the complete user experience rather than only Python versus C++ execution.
 
-## cgen CLI
+## Credits
 
-```powershell
-cgen -o SocialTweaks.cyan -f Tweak.dylib Resources.bundle -n "Social"
-cgen -o Documents.cyan -d -u -l ExtraInfo.plist --overwrite
-```
+Technical acknowledgement goes to [pyzule-rw](https://github.com/asdfzxcvbn/pyzule-rw), [Azule](https://github.com/mpelteshki/Azule), [LIEF](https://github.com/lief-project/LIEF), [insert_dylib](https://github.com/Tyilo/insert_dylib), and [Procursus ldid](https://github.com/ProcursusTeam/ldid).
 
-`cgen` is functional in the current build and creates a ZIP-compatible `.cyan`
-file at compression level 1.
-
-## `.cyan` format
-
-Every archive contains `config.json`. File-bearing options use these names:
-
-```text
-config.json
-inject/*
-icon.idk
-merge.plist
-new.entitlements
-```
-
-Multiple archives are applied in argument order. Later scalar configuration
-values replace earlier values; injection entries accumulate and resolve
-basename collisions using cyan-compatible ordering.
-
-## Dependency architecture
-
-- LIEF 0.17.6: public C++ Mach-O modification/fallback
-- libarchive 3.8.7: ZIP, AR, TAR, gzip, xz, zstd and bzip2
-- libplist 2.7.0: XML and binary plist processing
-- nlohmann/json 3.12.0: `.cyan` configuration
-- Catch2 3.15.1: tests only
-- Windows Imaging Component: icon decode, resize and PNG encode
-- bundled Cephei, CepheiUI, CepheiPrefs, CydiaSubstrate and Orion compatibility
-  frameworks: resolved when the corresponding cyan dependency flags are used
-
-See [docs/dependency-map.md](docs/dependency-map.md) and
-[docs/architecture.md](docs/architecture.md).
-
-## Signing backend status
-
-Signing is deliberately separated from injection. Release packages use the
-bundled, pinned official Windows `ldid.exe` for entitlement extraction and
-ad-hoc signing, then verify that every Mach-O slice received a signature.
-`--ldid PATH` can override the bundled executable. The original XML entitlement
-blob is preserved across injection.
-
-## Security considerations
-
-Only modify apps and binaries you are authorised to use. Treat every IPA, DEB,
-`.cyan`, plist, image and Mach-O file as hostile. Work on copies until a
-release is compatibility-verified. Report archive escapes, integer overflows
-and output-replacement issues privately as described in `SECURITY.md`.
-
-## Legal and authorised-use notice
-
-This project is intended for legitimate development, interoperability,
-research, testing and authorised app customisation. Users are responsible for
-complying with platform terms, local law and rights in the apps they process.
-
-## Credits and acknowledgements
-
-Technical thanks to:
-
-- asdfzxcvbn / [pyzule-rw](https://github.com/asdfzxcvbn/pyzule-rw)
-- Al4ise and mpelteshki / [Azule](https://github.com/mpelteshki/Azule)
-- lief-project / [LIEF](https://github.com/lief-project/LIEF)
-- Tyilo / [insert_dylib](https://github.com/Tyilo/insert_dylib)
-- LeanVel / [insert_dylib](https://github.com/LeanVel/insert_dylib)
-- ProcursusTeam / [ldid](https://github.com/ProcursusTeam/ldid)
-
-The project owner confirmed that the permissions required for analysed and
-integrated third-party materials were obtained before development.
-
-## Third-party notices
-
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Release archives include
-the exact notices collected from the locked dependency installation.
-
-## Contributing
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and
-[docs/test-strategy.md](docs/test-strategy.md). New parser behaviour requires
-a synthetic negative test; compatibility claims require differential evidence.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency details. Use this project only with apps and binaries you are authorized to modify.
