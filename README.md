@@ -79,9 +79,9 @@ in-place writes or unchecked Mach-O arithmetic.
 ## Download from GitHub Actions
 
 Open the repository's **Actions** tab, choose a successful **Windows CI** run,
-and download its Windows Release artifact. The workflow tests Debug and Release
-on `windows-2022` and `windows-2025`. Release packaging uses the 2022 image for
-the oldest supported compiler/runtime baseline.
+and download `cyan-cpp-windows-2022-x64`. The regular CI workflow deliberately
+uses one Windows 2022 Release build. CodeQL is weekly/manual, and tagged
+releases run only for `v*` tags.
 
 ## Download from Releases
 

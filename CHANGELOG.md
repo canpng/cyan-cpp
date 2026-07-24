@@ -15,3 +15,6 @@
 - Added synthetic unit and end-to-end tests for archive, CLI, plist, Mach-O,
   app, IPA/TIPA, DEB, icon and `.cyan` workflows.
 - Added Windows CI, release, CodeQL and dependency-audit workflows.
+- Simplified normal CI to one Windows 2022 Release artifact and switched hosted
+  builds to the Visual Studio generator to preserve the pinned vcpkg path.
+- Changed CodeQL from every push to weekly/manual execution.

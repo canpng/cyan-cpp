@@ -58,7 +58,7 @@ local Windows LLVM/MinGW validation build. Hosted MSVC and differential cyan
 | Signing | Ad-hoc signing | Implemented | Explicit `ldid.exe` adapter; requires user executable |
 | Testing | Synthetic thin/FAT/app/IPA/DEB fixtures | Tested | Single deterministic Catch2 executable |
 | Testing | Differential cyan manifest | Not started | Required for “Compatibility verified” |
-| CI | Windows 2022/2025 Debug/Release definitions | Implemented | Workflow authored; hosted run not claimed |
+| CI | Windows 2022 Release build | Implemented | Single artifact-producing workflow; hosted result pending |
 | CI | CTest and CLI smoke tests | Implemented | Workflow steps and local equivalents |
 | Release | ZIP, SHA-256 and SPDX SBOM | Implemented | Tag workflow; hosted run not claimed |
 | Release | CodeQL | Implemented | Dedicated workflow |

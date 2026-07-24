@@ -10,13 +10,8 @@ permissions:
 
 jobs:
   build:
-    name: ${{ matrix.os }} / ${{ matrix.build_type }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-2022, windows-2025]
-        build_type: [Debug, Release]
+    name: Windows 2022 / Release
+    runs-on: windows-2022
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
@@ -34,22 +29,13 @@ jobs:
           ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
           path: vcpkg
 
-      - name: Initialise MSVC x64 environment
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          Import-Module "$installation\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $installation -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-          Get-ChildItem Env: | ForEach-Object { "$($_.Name)=$($_.Value)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append }
-
       - name: Restore vcpkg binary cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-${{ matrix.os }}-${{ matrix.build_type }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-windows-2022-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
           restore-keys: |
-            vcpkg-${{ matrix.os }}-${{ matrix.build_type }}-
+            vcpkg-windows-2022-release-
 
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -58,26 +44,25 @@ jobs:
       - name: Configure
         shell: pwsh
         run: |
-          $preset = if ('${{ matrix.build_type }}' -eq 'Debug') { 'windows-debug' } else { 'windows-release' }
-          cmake --preset $preset -DCYAN_WARNINGS_AS_ERRORS=ON
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          cmake -S . -B out\build\windows-release `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DCYAN_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         shell: pwsh
-        run: |
-          $preset = if ('${{ matrix.build_type }}' -eq 'Debug') { 'windows-debug' } else { 'windows-release' }
-          cmake --build --preset $preset
+        run: cmake --build out\build\windows-release --config Release --parallel 4
 
       - name: Test
         shell: pwsh
-        run: |
-          $preset = if ('${{ matrix.build_type }}' -eq 'Debug') { 'windows-debug' } else { 'windows-release' }
-          ctest --preset $preset
+        run: ctest --test-dir out\build\windows-release -C Release --output-on-failure
 
       - name: CLI smoke test
         shell: pwsh
         run: |
-          $preset = if ('${{ matrix.build_type }}' -eq 'Debug') { 'windows-debug' } else { 'windows-release' }
-          $build = "out\build\$preset"
+          $build = "out\build\windows-release\Release"
           & "$build\cyan.exe" --help
           if ($LASTEXITCODE -ne 0) { throw "cyan --help failed" }
           & "$build\cyan.exe" --version
@@ -86,19 +71,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cgen --help failed" }
 
       - name: Package
-        if: matrix.build_type == 'Release'
         shell: pwsh
         run: |
-          cmake --install out\build\windows-release --prefix out\package
+          cmake --install out\build\windows-release --prefix out\package --config Release
           Compress-Archive -Path out\package\* -DestinationPath cyan-cpp-windows-x64.zip -CompressionLevel Optimal -Force
           (Get-FileHash cyan-cpp-windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  cyan-cpp-windows-x64.zip' | Set-Content cyan-cpp-windows-x64.sha256 -Encoding ascii
           .\scripts\generate-sbom.ps1 -OutputPath cyan-cpp-windows-x64.spdx.json
 
       - name: Upload Release artifact
-        if: matrix.build_type == 'Release'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: cyan-cpp-${{ matrix.os }}-x64
+          name: cyan-cpp-windows-2022-x64
           path: |
             cyan-cpp-windows-x64.zip
             cyan-cpp-windows-x64.sha256

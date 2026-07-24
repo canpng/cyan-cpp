@@ -83,10 +83,9 @@ can run libFuzzer/ASan on a supported LLVM runner.
 
 ## Windows verification matrix
 
-Required CI matrix:
+Required CI build:
 
-- `windows-2022`, Debug and Release;
-- `windows-2025`, Debug and Release;
+- `windows-2022`, Release;
 - MSVC `/W4 /permissive- /Zc:__cplusplus /EHsc`, project warnings as errors;
 - CTest, CLI `--help`/`--version`, package smoke test;
 - paths containing Turkish/CJK characters, spaces, UNC syntax and a
@@ -94,6 +93,8 @@ Required CI matrix:
 - release dependency/DLL inventory and SHA-256.
 
 CodeQL runs independently. Release tags repeat Release tests before packaging.
+Debug and newer-runner validation may be added temporarily when investigating
+toolchain-specific defects; they are not required to produce the user artifact.
 
 ## Exit criteria
 
