@@ -39,7 +39,7 @@ jobs:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: release-vcpkg-windows-2022-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
 
-      - name: Fetch pinned Procursus ldid
+      - name: Verify bundled Team ID-capable Procursus ldid
         shell: pwsh
         run: .\scripts\fetch-ldid.ps1 -OutputPath out\tools\ldid.exe
 

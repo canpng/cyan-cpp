@@ -22,6 +22,7 @@ enum class ErrorCode {
   invalid_compression_level,
   invalid_version,
   invalid_utf8,
+  operation_cancelled,
   filesystem_error,
   archive_open_failed,
   archive_invalid,

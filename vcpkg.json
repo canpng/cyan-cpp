@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "cyan-cpp",
-  "version-string": "0.1.0-dev",
+  "version-string": "0.2.0",
   "description": "Native Windows C++20 rewrite of cyan 1.4.4",
   "license": "MIT",
   "supports": "windows & x64",

@@ -8,6 +8,7 @@ on:
       - scripts/bootstrap-vcpkg.ps1
       - scripts/fetch-ldid.ps1
       - scripts/generate-sbom.ps1
+      - assets/ldid/**
       - .github/workflows/dependency-audit.yml
   workflow_dispatch:
 

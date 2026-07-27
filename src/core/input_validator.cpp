@@ -104,7 +104,8 @@ Result<void> validate_and_normalize(CyanOptions& options) {
   }
 
   for (const auto& optional :
-       {options.icon, options.merge_plist, options.entitlements, options.ldid_path}) {
+       {options.icon, options.merge_plist, options.entitlements, options.ldid_path,
+        options.ipapatch_dylib}) {
     auto valid = validate_optional_file(optional);
     if (!valid) {
       return valid;

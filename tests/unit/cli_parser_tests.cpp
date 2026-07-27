@@ -2,6 +2,7 @@
 
 #include "cyan/core/cli_parser.hpp"
 #include "cyan/core/input_validator.hpp"
+#include "cyan/ipapatch/cli_parser.hpp"
 
 TEST_CASE("cyan parses the 1.4.4 option surface") {
   const std::vector<std::wstring> arguments{L"-i",          L"C:\\Apps\\Test.tipa",
@@ -99,4 +100,37 @@ TEST_CASE("cgen appends the cyan extension") {
   auto valid = cyan::validate_and_normalize(options);
   REQUIRE(valid);
   CHECK(options.output.extension() == L".cyan");
+}
+
+TEST_CASE("cyan parses integrated ipapatch options") {
+  auto parsed = cyan::parse_cyan_arguments(
+      {L"-i", L"Test.ipa", L"--ipapatch-dylib", L"C:\\Payloads\\Özel.dylib",
+       L"--ipapatch-plugins-only"});
+  REQUIRE(parsed);
+  CHECK(parsed.value().ipapatch);
+  CHECK(parsed.value().ipapatch_plugins_only);
+  REQUIRE(parsed.value().ipapatch_dylib);
+  CHECK(parsed.value().ipapatch_dylib->filename() == L"Özel.dylib");
+}
+
+TEST_CASE("standalone ipapatch parser matches the v2.1.3 option surface") {
+  auto parsed = cyan::parse_ipapatch_arguments(
+      {L"--input", L"C:\\Girdi\\Uygulama.ipa", L"--output", L"C:\\Çıktı\\Yama.ipa",
+       L"--dylib", L"C:\\Payload\\Özel.dylib", L"--plugins-only", L"--noconfirm"});
+  REQUIRE(parsed);
+  CHECK(parsed.value().input.filename() == L"Uygulama.ipa");
+  CHECK(parsed.value().output.filename() == L"Yama.ipa");
+  CHECK(parsed.value().plugins_only);
+  CHECK(parsed.value().noconfirm);
+  REQUIRE(parsed.value().dylib);
+
+  auto inplace =
+      cyan::parse_ipapatch_arguments({L"--input", L"Test.ipa", L"--inplace"});
+  REQUIRE(inplace);
+  CHECK(inplace.value().output == inplace.value().input);
+
+  auto conflict = cyan::parse_ipapatch_arguments(
+      {L"--input", L"Test.ipa", L"--output", L"Out.ipa", L"--inplace"});
+  REQUIRE(conflict);
+  CHECK(conflict.value().output == conflict.value().input);
 }

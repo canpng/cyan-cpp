@@ -50,6 +50,9 @@ native extensions:
       --compatibility-mode cyan
       --dependency-dir PATH
       --ldid PATH               override bundled signer with ldid.exe
+      --ipapatch                apply ipapatch v2.1.3 behavior
+      --ipapatch-dylib PATH     use a custom ipapatch payload
+      --ipapatch-plugins-only   patch app extensions, not the main executable
 
 other:
   -h, --help
@@ -88,7 +91,8 @@ other:
       --version
 )";
 
-constexpr std::wstring_view cyan_version = L"cyan v1.4.4 (cyan-cpp 0.1.0)";
+constexpr std::wstring_view cyan_version =
+    L"cyan v1.4.4 (cyan-cpp " CYAN_VERSION_WIDE L")";
 
 Error argument_error(ErrorCode code, std::wstring_view message) {
   auto encoded = platform::utf8_from_wide(message);
@@ -360,6 +364,18 @@ Result<CyanOptions> parse_cyan_arguments(const std::vector<std::wstring>& argume
         return Result<CyanOptions>::failure(value.error());
       }
       options.ldid_path = std::filesystem::path(value.take_value());
+    } else if (argument == L"--ipapatch") {
+      options.ipapatch = true;
+    } else if (argument == L"--ipapatch-dylib") {
+      auto value = required_value(arguments, index, argument);
+      if (!value) {
+        return Result<CyanOptions>::failure(value.error());
+      }
+      options.ipapatch_dylib = std::filesystem::path(value.take_value());
+      options.ipapatch = true;
+    } else if (argument == L"--ipapatch-plugins-only") {
+      options.ipapatch_plugins_only = true;
+      options.ipapatch = true;
     } else {
       return Result<CyanOptions>::failure(
           argument_error(ErrorCode::unknown_option,

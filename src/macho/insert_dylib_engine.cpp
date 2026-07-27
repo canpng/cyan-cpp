@@ -321,15 +321,33 @@ InjectionResult write_atomically(const std::filesystem::path& path,
   return {InjectionError::None, "injected dylib with native backend", true};
 }
 
-std::optional<std::vector<std::uint8_t>> rebuild_fat(std::span<const std::uint8_t> original,
-                                                     const macho_internal::Container& container,
-                                                     const std::vector<ModifiedSlice>& slices,
-                                                     InjectionResult& failure) {
-  std::vector<std::uint8_t> output(
-      original.begin(), original.begin() + static_cast<std::ptrdiff_t>(container.fat_table_end));
+struct SelectedSlice {
+  std::size_t original_index{0};
+  ModifiedSlice modified;
+};
+
+std::optional<std::vector<std::uint8_t>> rebuild_fat(
+    std::span<const std::uint8_t> original, const macho_internal::Container& container,
+    const std::vector<SelectedSlice>& slices, InjectionResult& failure) {
+  const std::size_t architecture_size = container.is_fat64 ? 32U : 20U;
+  std::size_t table_size = 0;
+  if (!checked_add(8U, architecture_size * slices.size(), table_size) ||
+      table_size > original.size()) {
+    failure = failed(InjectionError::ArithmeticOverflow, "FAT architecture table overflow");
+    return std::nullopt;
+  }
+  std::vector<std::uint8_t> output(original.begin(),
+                                   original.begin() + static_cast<std::ptrdiff_t>(table_size));
+  macho_internal::write_u32(output, 4U, static_cast<std::uint32_t>(slices.size()),
+                            container.fat_byte_order);
 
   for (std::size_t index = 0; index < slices.size(); ++index) {
-    const auto& architecture = container.fat_arches[index];
+    const auto& selected = slices[index];
+    const auto& architecture = container.fat_arches[selected.original_index];
+    const std::size_t table_offset = 8U + index * architecture_size;
+    std::copy_n(original.begin() + static_cast<std::ptrdiff_t>(architecture.table_offset),
+                architecture_size,
+                output.begin() + static_cast<std::ptrdiff_t>(table_offset));
     const std::uint64_t alignment64 = 1ULL << architecture.alignment_exponent;
     if (alignment64 > (std::numeric_limits<std::size_t>::max)()) {
       failure = failed(InjectionError::ArithmeticOverflow, "FAT alignment exceeds host size");
@@ -341,29 +359,31 @@ std::optional<std::vector<std::uint8_t>> rebuild_fat(std::span<const std::uint8_
       return std::nullopt;
     }
     output.resize(offset, 0U);
-    if (slices[index].bytes.size() > (std::numeric_limits<std::size_t>::max)() - output.size()) {
+    if (selected.modified.bytes.size() >
+        (std::numeric_limits<std::size_t>::max)() - output.size()) {
       failure = failed(InjectionError::ArithmeticOverflow, "FAT output size overflow");
       return std::nullopt;
     }
-    output.insert(output.end(), slices[index].bytes.begin(), slices[index].bytes.end());
+    output.insert(output.end(), selected.modified.bytes.begin(), selected.modified.bytes.end());
 
     auto mutable_output = std::span<std::uint8_t>(output);
     if (container.is_fat64) {
-      macho_internal::write_u64(mutable_output, architecture.table_offset + 8U,
+      macho_internal::write_u64(mutable_output, table_offset + 8U,
                                 static_cast<std::uint64_t>(offset), container.fat_byte_order);
-      macho_internal::write_u64(mutable_output, architecture.table_offset + 16U,
-                                static_cast<std::uint64_t>(slices[index].bytes.size()),
+      macho_internal::write_u64(mutable_output, table_offset + 16U,
+                                static_cast<std::uint64_t>(selected.modified.bytes.size()),
                                 container.fat_byte_order);
     } else {
       if (offset > (std::numeric_limits<std::uint32_t>::max)() ||
-          slices[index].bytes.size() > (std::numeric_limits<std::uint32_t>::max)()) {
+          selected.modified.bytes.size() >
+              (std::numeric_limits<std::uint32_t>::max)()) {
         failure = failed(InjectionError::ArithmeticOverflow, "FAT32 slice offset or size overflow");
         return std::nullopt;
       }
-      macho_internal::write_u32(mutable_output, architecture.table_offset + 8U,
+      macho_internal::write_u32(mutable_output, table_offset + 8U,
                                 static_cast<std::uint32_t>(offset), container.fat_byte_order);
-      macho_internal::write_u32(mutable_output, architecture.table_offset + 12U,
-                                static_cast<std::uint32_t>(slices[index].bytes.size()),
+      macho_internal::write_u32(mutable_output, table_offset + 12U,
+                                static_cast<std::uint32_t>(selected.modified.bytes.size()),
                                 container.fat_byte_order);
     }
   }
@@ -391,10 +411,16 @@ InjectionResult InsertDylibEngine::inject(const std::filesystem::path& binary,
     return failed(parsed.failure.error, parsed.failure.message);
   }
 
-  std::vector<ModifiedSlice> modified_slices;
+  std::vector<SelectedSlice> modified_slices;
   modified_slices.reserve(parsed.value->slices.size());
   bool removed_any_signature = false;
-  for (const auto& slice : parsed.value->slices) {
+  for (std::size_t index = 0; index < parsed.value->slices.size(); ++index) {
+    const auto& slice = parsed.value->slices[index];
+    if (parsed.value->is_fat &&
+        options.fatArchitecturePolicy == FatArchitecturePolicy::IpaPatchV213 &&
+        static_cast<std::uint32_t>(slice.cpu_subtype) > 2U) {
+      continue;
+    }
     const auto original =
         std::span<const std::uint8_t>(input.value()).subspan(slice.file_offset, slice.file_size);
     auto modified = modify_slice(original, slice, dylibPath, options);
@@ -402,7 +428,11 @@ InjectionResult InsertDylibEngine::inject(const std::filesystem::path& binary,
       return modified.failure;
     }
     removed_any_signature = removed_any_signature || modified.value->removed_signature;
-    modified_slices.push_back(std::move(*modified.value));
+    modified_slices.push_back({index, std::move(*modified.value)});
+  }
+  if (modified_slices.empty()) {
+    return failed(InjectionError::UnsupportedArchitecture,
+                  "FAT Mach-O has no slice supported by ipapatch v2.1.3");
   }
 
   std::vector<std::uint8_t> output;
@@ -414,7 +444,7 @@ InjectionResult InsertDylibEngine::inject(const std::filesystem::path& binary,
     }
     output = std::move(*rebuilt);
   } else {
-    output = std::move(modified_slices.front().bytes);
+    output = std::move(modified_slices.front().modified.bytes);
   }
 
   MachOInspector inspector;

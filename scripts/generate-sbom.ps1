@@ -9,7 +9,7 @@ $packages = @(
   @{
     SPDXID = 'SPDXRef-Package-cyan-cpp'
     name = 'cyan-cpp'
-    versionInfo = '0.1.0-dev'
+    versionInfo = '0.2.0'
     downloadLocation = 'NOASSERTION'
     filesAnalyzed = $false
     licenseConcluded = 'MIT'
@@ -49,8 +49,8 @@ $packages = @(
   @{
     SPDXID = 'SPDXRef-Package-ldid'
     name = 'ldid'
-    versionInfo = '2.1.5-procursus7'
-    downloadLocation = 'https://github.com/ProcursusTeam/ldid/releases/tag/v2.1.5-procursus7'
+    versionInfo = '2.1.5-procursus7+c50e84e'
+    downloadLocation = 'https://github.com/ProcursusTeam/ldid/tree/c50e84e18532044b23ec5e971d55ab0cdd4b6685'
     filesAnalyzed = $false
     licenseConcluded = 'AGPL-3.0-only'
     licenseDeclared = 'AGPL-3.0-only'

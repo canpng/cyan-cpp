@@ -4,6 +4,7 @@ add_executable(
   unit/cli_parser_tests.cpp
   unit/dependency_resolver_tests.cpp
   unit/insert_dylib_engine_tests.cpp
+  unit/ipapatch_service_tests.cpp
   unit/plist_document_tests.cpp
   unit/signing_backend_tests.cpp
   integration/pipeline_tests.cpp
@@ -14,18 +15,25 @@ target_link_libraries(
     cyan_core
     cyan_archive
     cyan_macho
+    cyan_ipapatch
     cyan_pipeline
     cyan_plist
     cyan_signing
     Catch2::Catch2WithMain
 )
+target_compile_definitions(
+  cyan_tests
+  PRIVATE
+    CYAN_TEST_IPAPATCH_PAYLOAD="${PROJECT_SOURCE_DIR}/assets/ipapatch/v2.1.3/zxPluginsInject.dylib"
+)
 cyan_set_project_warnings(cyan_tests)
 
 add_test(NAME cyan_unit COMMAND cyan_tests)
+set(
+  cyan_test_environment
+  "CYAN_TEST_IPAPATCH_CLI=$<TARGET_FILE:ipapatch>"
+)
 if(CYAN_LDID_EXECUTABLE)
-  set_tests_properties(
-    cyan_unit
-    PROPERTIES
-      ENVIRONMENT "CYAN_TEST_LDID=${CYAN_LDID_EXECUTABLE}"
-  )
+  list(APPEND cyan_test_environment "CYAN_TEST_LDID=${CYAN_LDID_EXECUTABLE}")
 endif()
+set_tests_properties(cyan_unit PROPERTIES ENVIRONMENT "${cyan_test_environment}")

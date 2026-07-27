@@ -10,7 +10,7 @@ if(MINGW)
 endif()
 
 install(
-  TARGETS cyan cgen
+  TARGETS cyan cgen ipapatch
   RUNTIME_DEPENDENCIES
     ${cyan_runtime_dependency_directories}
     PRE_EXCLUDE_REGEXES
@@ -20,6 +20,10 @@ install(
       ".*[\\\\/][Ss][Yy][Ss][Tt][Ee][Mm]32[\\\\/].*"
       ".*[\\\\/][Ss][Yy][Ss][Ww][Oo][Ww]64[\\\\/].*"
   RUNTIME DESTINATION "."
+)
+install(
+  FILES "${PROJECT_SOURCE_DIR}/assets/ipapatch/v2.1.3/zxPluginsInject.dylib"
+  DESTINATION "."
 )
 install(
   FILES

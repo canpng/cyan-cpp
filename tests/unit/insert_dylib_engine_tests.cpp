@@ -104,19 +104,20 @@ std::vector<std::uint8_t> signed_thin64() {
   return bytes;
 }
 
-std::vector<std::uint8_t> fat_binary() {
+std::vector<std::uint8_t> fat_binary(std::uint32_t arm_subtype = 0U,
+                                     std::uint32_t x64_subtype = 0U) {
   const auto arm64 = thin64(0x0100000cU);
   const auto x64 = thin64(0x01000007U);
   std::vector<std::uint8_t> bytes(0x2800U, 0U);
   put32be(bytes, 0U, 0xcafebabeU);
   put32be(bytes, 4U, 2U);
   put32be(bytes, 8U, 0x0100000cU);
-  put32be(bytes, 12U, 0U);
+  put32be(bytes, 12U, arm_subtype);
   put32be(bytes, 16U, 0x1000U);
   put32be(bytes, 20U, static_cast<std::uint32_t>(arm64.size()));
   put32be(bytes, 24U, 12U);
   put32be(bytes, 28U, 0x01000007U);
-  put32be(bytes, 32U, 0U);
+  put32be(bytes, 32U, x64_subtype);
   put32be(bytes, 36U, 0x2000U);
   put32be(bytes, 40U, static_cast<std::uint32_t>(x64.size()));
   put32be(bytes, 44U, 12U);
@@ -206,4 +207,27 @@ TEST_CASE("native engine rebuilds every FAT architecture") {
   for (const auto& slice : info.value().slices) {
     CHECK(slice.dependencies == std::vector<std::string>{"@rpath/Fat.dylib"});
   }
+}
+
+TEST_CASE("native engine reproduces ipapatch v2.1.3 FAT subtype filtering") {
+  TemporaryFile file(fat_binary(0U, 3U));
+  cyan::InsertDylibEngine engine;
+  cyan::InjectionOptions options;
+  options.fatArchitecturePolicy = cyan::FatArchitecturePolicy::IpaPatchV213;
+  const auto result = engine.inject(file.path(), "@rpath/Fat.dylib", options);
+  REQUIRE(result.error == cyan::InjectionError::None);
+
+  cyan::MachOInspector inspector;
+  auto info = inspector.inspect(file.path());
+  REQUIRE(info);
+  REQUIRE(info.value().is_fat);
+  REQUIRE(info.value().slices.size() == 1U);
+  CHECK(info.value().slices.front().cpu_type == 0x0100000c);
+  CHECK(info.value().slices.front().dependencies ==
+        std::vector<std::string>{"@rpath/Fat.dylib"});
+
+  TemporaryFile unsupported(fat_binary(3U, 3U));
+  const auto rejected =
+      engine.inject(unsupported.path(), "@rpath/Fat.dylib", options);
+  CHECK(rejected.error == cyan::InjectionError::UnsupportedArchitecture);
 }

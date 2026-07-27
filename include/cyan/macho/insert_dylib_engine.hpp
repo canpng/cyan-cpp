@@ -8,6 +8,8 @@ namespace cyan {
 
 enum class LoadCommandType { Strong, Weak };
 
+enum class FatArchitecturePolicy { PreserveAll, IpaPatchV213 };
+
 enum class InjectionError {
   None,
   FileNotFound,
@@ -31,6 +33,7 @@ struct InjectionOptions {
   bool stripCodeSignature{true};
   bool allowDuplicate{false};
   bool allowUnsafeOverwrite{false};
+  FatArchitecturePolicy fatArchitecturePolicy{FatArchitecturePolicy::PreserveAll};
 };
 
 struct InjectionResult {

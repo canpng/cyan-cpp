@@ -204,3 +204,51 @@ TEST_CASE("Procursus ldid creates an ad-hoc Mach-O signature") {
   REQUIRE(extracted_result);
   CHECK(extracted.string("application-identifier") == "TEAM.fixture");
 }
+
+TEST_CASE("Procursus ldid preserves supported signature metadata including Team ID") {
+  const auto signer = ldid_from_environment();
+  if (signer.empty()) {
+    SKIP("CYAN_TEST_LDID is not configured");
+  }
+
+  auto workspace = cyan::TemporaryWorkspace::create();
+  REQUIRE(workspace);
+  const auto executable = workspace.value().path() / L"profile-fixture";
+  write_bytes(executable, unsigned_macho());
+
+  auto document = cyan::PlistDocument::create_dictionary();
+  REQUIRE(document);
+  REQUIRE(document.value().set_string("application-identifier", "TEAM.profile"));
+  cyan::SigningProfile requested;
+  requested.identifier = "com.example.profile";
+  requested.team_identifier = "TEAMID1234";
+  requested.flags = 0x10000U;
+  requested.platform = 2U;
+  requested.had_der_entitlements = true;
+  requested.entitlements.emplace(document.take_value());
+
+  cyan::ExternalLdidSigningBackend backend(signer);
+  auto signed_result = backend.signAdHoc(executable, requested);
+  if (!signed_result) {
+    workspace.value().preserve();
+  }
+  const std::string profile_signing_error =
+      signed_result ? std::string{} : signed_result.error().message;
+  INFO(profile_signing_error);
+  INFO(executable.string());
+  REQUIRE(signed_result);
+
+  auto captured = backend.captureProfile(executable);
+  const std::string profile_capture_error =
+      captured ? std::string{} : captured.error().message;
+  INFO(profile_capture_error);
+  REQUIRE(captured);
+  CHECK(captured.value().identifier == requested.identifier);
+  CHECK(captured.value().team_identifier == requested.team_identifier);
+  CHECK(captured.value().flags == (requested.flags | 0x2U));
+  CHECK(captured.value().platform == requested.platform);
+  CHECK(captured.value().had_der_entitlements);
+  REQUIRE(captured.value().entitlements);
+  CHECK(captured.value().entitlements->string("application-identifier") == "TEAM.profile");
+
+}

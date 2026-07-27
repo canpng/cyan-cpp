@@ -63,7 +63,7 @@ int wmain(int argc, wchar_t* argv[]) {
     return 0;
   }
   if (options.show_version) {
-    cyan::platform::write_stdout(L"cgen (cyan-cpp 0.1.0)\n");
+    cyan::platform::write_stdout(L"cgen (cyan-cpp " CYAN_VERSION_WIDE L")\n");
     return 0;
   }
 

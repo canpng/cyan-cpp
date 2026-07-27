@@ -21,6 +21,7 @@ struct CyanOptions {
   std::optional<std::filesystem::path> entitlements;
   std::optional<std::filesystem::path> dependency_directory;
   std::optional<std::filesystem::path> ldid_path;
+  std::optional<std::filesystem::path> ipapatch_dylib;
   bool remove_supported_devices{false};
   bool no_watch{false};
   bool enable_documents{false};
@@ -31,6 +32,8 @@ struct CyanOptions {
   bool ignore_encrypted{false};
   bool overwrite{false};
   bool compatibility_cyan{false};
+  bool ipapatch{false};
+  bool ipapatch_plugins_only{false};
   bool show_help{false};
   bool show_version{false};
   int compression_level{6};

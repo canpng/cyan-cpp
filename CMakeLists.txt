@@ -4,7 +4,7 @@ cmake_policy(SET CMP0091 NEW)
 
 project(
   cyan-cpp
-  VERSION 0.1.0
+  VERSION 0.2.0
   DESCRIPTION "Native Windows C++20 rewrite of cyan"
   LANGUAGES CXX
 )
@@ -61,8 +61,8 @@ target_compile_definitions(
     _UNICODE
     NOMINMAX
     WIN32_LEAN_AND_MEAN
-  PRIVATE
     CYAN_VERSION="${PROJECT_VERSION}"
+    CYAN_VERSION_WIDE=L"${PROJECT_VERSION}"
 )
 cyan_set_project_warnings(cyan_core)
 
@@ -81,6 +81,7 @@ cyan_set_project_warnings(cyan_archive)
 
 add_library(
   cyan_macho STATIC
+  src/macho/code_signature_inspector.cpp
   src/macho/insert_dylib_engine.cpp
   src/macho/macho_inspector.cpp
 )
@@ -132,6 +133,18 @@ target_link_libraries(
 cyan_set_project_warnings(cyan_signing)
 
 add_library(
+  cyan_ipapatch STATIC
+  src/ipapatch/cli_parser.cpp
+  src/ipapatch/ipapatch_service.cpp
+)
+target_link_libraries(
+  cyan_ipapatch
+  PUBLIC cyan_core cyan_signing
+  PRIVATE cyan_archive cyan_bundle cyan_lief cyan_macho cyan_plist
+)
+cyan_set_project_warnings(cyan_ipapatch)
+
+add_library(
   cyan_pipeline STATIC
   src/core/cyan_pipeline.cpp
 )
@@ -142,6 +155,7 @@ target_link_libraries(
     cyan_archive
     cyan_bundle
     cyan_image
+    cyan_ipapatch
     cyan_lief
     cyan_macho
     cyan_plist
@@ -164,6 +178,7 @@ target_link_libraries(
     cyan_archive
     cyan_plist
     cyan_image
+    cyan_ipapatch
     cyan_bundle
     cyan_macho
     cyan_lief
@@ -172,24 +187,54 @@ target_link_libraries(
 )
 cyan_set_project_warnings(cyan)
 
+add_executable(ipapatch src/ipapatch/main.cpp)
+target_link_libraries(
+  ipapatch
+  PRIVATE cyan_core cyan_ipapatch cyan_signing
+)
+cyan_set_project_warnings(ipapatch)
+
 add_executable(cgen src/cgen/main.cpp)
 target_link_libraries(cgen PRIVATE cyan_core cyan_archive)
 cyan_set_project_warnings(cgen)
 
-if(CYAN_LDID_EXECUTABLE)
+set(
+  CYAN_IPAPATCH_PAYLOAD
+  "${PROJECT_SOURCE_DIR}/assets/ipapatch/v2.1.3/zxPluginsInject.dylib"
+)
+if(NOT EXISTS "${CYAN_IPAPATCH_PAYLOAD}")
+  message(FATAL_ERROR "Pinned ipapatch v2.1.3 payload is missing")
+endif()
+
+foreach(cyan_runtime_target IN ITEMS cyan ipapatch)
   add_custom_command(
-    TARGET cyan
+    TARGET ${cyan_runtime_target}
+    POST_BUILD
+    COMMAND
+      "${CMAKE_COMMAND}" -E copy_if_different
+      "${CYAN_IPAPATCH_PAYLOAD}"
+      "$<TARGET_FILE_DIR:${cyan_runtime_target}>/zxPluginsInject.dylib"
+    VERBATIM
+  )
+endforeach()
+
+if(CYAN_LDID_EXECUTABLE)
+  foreach(cyan_runtime_target IN ITEMS cyan ipapatch)
+  add_custom_command(
+    TARGET ${cyan_runtime_target}
     POST_BUILD
     COMMAND
       "${CMAKE_COMMAND}" -E copy_if_different
       "${CYAN_LDID_EXECUTABLE}"
-      "$<TARGET_FILE_DIR:cyan>/ldid.exe"
+      "$<TARGET_FILE_DIR:${cyan_runtime_target}>/ldid.exe"
     VERBATIM
   )
+  endforeach()
 endif()
 
 if(MINGW)
   target_link_options(cyan PRIVATE -municode)
+  target_link_options(ipapatch PRIVATE -municode)
   target_link_options(cgen PRIVATE -municode)
 endif()
 

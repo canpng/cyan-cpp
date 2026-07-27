@@ -47,7 +47,7 @@ jobs:
         shell: pwsh
         run: .\scripts\bootstrap-vcpkg.ps1 -VcpkgRoot $env:VCPKG_ROOT
 
-      - name: Fetch pinned Procursus ldid
+      - name: Verify bundled Team ID-capable Procursus ldid
         shell: pwsh
         run: .\scripts\fetch-ldid.ps1 -OutputPath out\tools\ldid.exe
 
@@ -80,6 +80,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cyan --version failed" }
           & "$build\cgen.exe" --help
           if ($LASTEXITCODE -ne 0) { throw "cgen --help failed" }
+          & "$build\ipapatch.exe" --help
+          if ($LASTEXITCODE -ne 0) { throw "ipapatch --help failed" }
+          & "$build\ipapatch.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "ipapatch --version failed" }
+          if (-not (Test-Path "$build\zxPluginsInject.dylib" -PathType Leaf)) {
+            throw "pinned ipapatch payload was not copied"
+          }
+          $payloadHash = (Get-FileHash "$build\zxPluginsInject.dylib" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($payloadHash -ne "cd903ea15657cbd356398adcb60c8872c41c29b69acc1a5dfb78a49d6e75dea5") {
+            throw "pinned ipapatch payload hash mismatch"
+          }
 
       - name: Package
         shell: pwsh

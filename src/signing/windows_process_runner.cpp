@@ -1,5 +1,6 @@
 #include <Windows.h>
 
+#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,6 +39,55 @@ class UniqueHandle {
  private:
   HANDLE handle_{nullptr};
 };
+
+class TemporaryFile {
+ public:
+  TemporaryFile() {
+    std::vector<wchar_t> directory(MAX_PATH + 1U);
+    const DWORD directory_length =
+        GetTempPathW(static_cast<DWORD>(directory.size()), directory.data());
+    if (directory_length == 0U || directory_length >= directory.size()) {
+      return;
+    }
+    std::vector<wchar_t> path(MAX_PATH + 1U);
+    if (GetTempFileNameW(directory.data(), L"cyn", 0U, path.data()) == 0U) {
+      return;
+    }
+    path_ = path.data();
+  }
+
+  ~TemporaryFile() {
+    if (!path_.empty()) {
+      static_cast<void>(DeleteFileW(path_.c_str()));
+    }
+  }
+
+  TemporaryFile(const TemporaryFile&) = delete;
+  TemporaryFile& operator=(const TemporaryFile&) = delete;
+
+  [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+  [[nodiscard]] bool valid() const noexcept { return !path_.empty(); }
+
+ private:
+  std::filesystem::path path_;
+};
+
+std::string read_diagnostic(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    return {};
+  }
+  constexpr std::size_t maximum_length = 16U * 1024U;
+  std::string message(maximum_length, '\0');
+  input.read(message.data(), static_cast<std::streamsize>(message.size()));
+  message.resize(static_cast<std::size_t>(input.gcount()));
+  while (!message.empty() &&
+         (message.back() == '\0' || message.back() == '\r' || message.back() == '\n' ||
+          message.back() == ' ' || message.back() == '\t')) {
+    message.pop_back();
+  }
+  return message;
+}
 
 std::wstring quote_argument(std::wstring_view argument) {
   if (argument.empty()) {
@@ -90,11 +140,19 @@ Result<void> run_tool(const std::filesystem::path& executable,
   UniqueHandle null_output(CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                        &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
   UniqueHandle captured;
+  TemporaryFile diagnostic_file;
+  UniqueHandle diagnostic_output;
   if (standard_output) {
     captured = UniqueHandle(CreateFileW(standard_output->c_str(), GENERIC_WRITE, FILE_SHARE_READ,
                                         &security, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
   }
-  if (!null_input.valid() || !null_output.valid() || (standard_output && !captured.valid())) {
+  if (diagnostic_file.valid()) {
+    diagnostic_output =
+        UniqueHandle(CreateFileW(diagnostic_file.path().c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+                                 &security, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
+  }
+  if (!null_input.valid() || !null_output.valid() || (standard_output && !captured.valid()) ||
+      !diagnostic_file.valid() || !diagnostic_output.valid()) {
     return Result<void>::failure({ErrorCode::filesystem_error,
                                   "could not prepare signing-tool process handles", executable});
   }
@@ -112,7 +170,7 @@ Result<void> run_tool(const std::filesystem::path& executable,
   startup.dwFlags = STARTF_USESTDHANDLES;
   startup.hStdInput = null_input.get();
   startup.hStdOutput = standard_output ? captured.get() : null_output.get();
-  startup.hStdError = null_output.get();
+  startup.hStdError = diagnostic_output.get();
   PROCESS_INFORMATION process{};
   if (!CreateProcessW(executable.c_str(), mutable_command.data(), nullptr, nullptr, TRUE,
                       CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
@@ -141,9 +199,12 @@ Result<void> run_tool(const std::filesystem::path& executable,
                                   executable});
   }
   if (exit_code != 0U) {
+    diagnostic_output = UniqueHandle{};
+    const auto diagnostic = read_diagnostic(diagnostic_file.path());
     return Result<void>::failure(
         {ErrorCode::signing_failed,
-         std::string(tool_name) + " failed with exit code " + std::to_string(exit_code),
+         std::string(tool_name) + " failed with exit code " + std::to_string(exit_code) +
+             (diagnostic.empty() ? std::string{} : ": " + diagnostic),
          executable});
   }
   return Result<void>::success();

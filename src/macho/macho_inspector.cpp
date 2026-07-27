@@ -421,6 +421,10 @@ ParseResult<Container> parse_container(std::span<const std::uint8_t> bytes) {
   std::vector<std::pair<std::size_t, std::size_t>> ranges;
   for (std::uint32_t index = 0; index < count; ++index) {
     const std::size_t table_offset = 8U + static_cast<std::size_t>(index) * entry_size;
+    const std::int32_t fat_cpu_type = static_cast<std::int32_t>(
+        read_u32(bytes, table_offset, container.fat_byte_order));
+    const std::int32_t fat_cpu_subtype = static_cast<std::int32_t>(
+        read_u32(bytes, table_offset + 4U, container.fat_byte_order));
     const std::uint64_t offset64 =
         container.is_fat64 ? read_u64(bytes, table_offset + 8U, container.fat_byte_order)
                            : read_u32(bytes, table_offset + 8U, container.fat_byte_order);
@@ -450,6 +454,8 @@ ParseResult<Container> parse_container(std::span<const std::uint8_t> bytes) {
     if (!slice) {
       return fail<Container>(slice.failure.error, slice.failure.message);
     }
+    slice.value->cpu_type = fat_cpu_type;
+    slice.value->cpu_subtype = fat_cpu_subtype;
     container.slices.push_back(std::move(*slice.value));
   }
 

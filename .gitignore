@@ -18,6 +18,7 @@ CTestTestfile.cmake
 *.pdb
 *.ilk
 *.exe
+!assets/ldid/c50e84e/ldid.exe
 *.dll
 *.lib
 *.exp

@@ -178,6 +178,16 @@ void make_app(const std::filesystem::path& app) {
   write_synthetic_executable(app / L"Synthetic");
 }
 
+std::filesystem::path ldid_from_environment() {
+  std::vector<wchar_t> buffer(32768U);
+  const DWORD length = GetEnvironmentVariableW(L"CYAN_TEST_LDID", buffer.data(),
+                                               static_cast<DWORD>(buffer.size()));
+  if (length == 0U || static_cast<std::size_t>(length) >= buffer.size()) {
+    return {};
+  }
+  return std::filesystem::path(std::wstring(buffer.data(), length));
+}
+
 }  // namespace
 
 TEST_CASE("pipeline transforms a synthetic app bundle end to end") {
@@ -337,4 +347,67 @@ TEST_CASE("pipeline accepts TIPA and atomically publishes IPA output") {
   auto plist = cyan::PlistDocument::load(published_app / L"Info.plist");
   REQUIRE(plist);
   CHECK(plist.value().string("CFBundleName") == "Archive Result");
+}
+
+TEST_CASE("integrated ipapatch uses one extract and one package pass") {
+  const auto signer = ldid_from_environment();
+  if (signer.empty()) {
+    SKIP("CYAN_TEST_LDID is not configured");
+  }
+
+  TemporaryDirectory fixture;
+  const auto source = fixture.path() / L"source";
+  make_app(source / L"Payload" / L"Integrated.app");
+  cyan::ArchiveService archive;
+  const auto input = fixture.path() / L"Input.ipa";
+  const auto output = fixture.path() / L"Output.ipa";
+  REQUIRE(archive.create_zip(source, input, 1, false));
+  const auto injected_dylib = fixture.path() / L"Integrated Tweak.dylib";
+  write_synthetic_executable(injected_dylib);
+
+  cyan::CyanOptions options;
+  options.input = input;
+  options.output = output;
+  options.injected_items.push_back(injected_dylib);
+  options.ipapatch = true;
+  options.ipapatch_dylib = std::filesystem::path(CYAN_TEST_IPAPATCH_PAYLOAD);
+  options.ldid_path = signer;
+  options.overwrite = true;
+
+  std::vector<std::wstring> messages;
+  cyan::CyanPipeline pipeline;
+  auto completed = pipeline.run(std::move(options), [&](std::wstring_view message) {
+    messages.emplace_back(message);
+  });
+  const std::string pipeline_error =
+      completed ? std::string{} : completed.error().message;
+  INFO(pipeline_error);
+  REQUIRE(completed);
+  CHECK(std::count_if(messages.begin(), messages.end(), [](const std::wstring& message) {
+          return message.find(L"extracting ipa") != std::wstring::npos;
+        }) == 1);
+  CHECK(std::count_if(messages.begin(), messages.end(), [](const std::wstring& message) {
+          return message.find(L"generating ipa") != std::wstring::npos;
+        }) == 1);
+
+  const auto extracted = fixture.path() / L"result";
+  REQUIRE(archive.extract(output, extracted));
+  const auto executable = extracted / L"Payload" / L"Integrated.app" / L"Synthetic";
+  cyan::MachOInspector inspector;
+  auto inspected = inspector.inspect(executable);
+  REQUIRE(inspected);
+  REQUIRE(inspected.value().slices.size() == 1U);
+  CHECK(std::find(inspected.value().slices.front().dependencies.begin(),
+                  inspected.value().slices.front().dependencies.end(),
+                  "@rpath/zxPluginsInject.dylib") !=
+        inspected.value().slices.front().dependencies.end());
+  CHECK(inspected.value().slices.front().has_code_signature);
+
+  const auto installed_dylib =
+      extracted / L"Payload" / L"Integrated.app" / L"Frameworks" /
+      injected_dylib.filename();
+  auto dylib_info = inspector.inspect(installed_dylib);
+  REQUIRE(dylib_info);
+  REQUIRE(dylib_info.value().slices.size() == 1U);
+  CHECK(dylib_info.value().slices.front().has_code_signature);
 }
