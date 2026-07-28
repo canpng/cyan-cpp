@@ -546,9 +546,9 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
     signing = std::make_unique<ExternalLdidSigningBackend>(std::move(*signer));
   }
   if (options.ipapatch && !signing) {
-    return Result<void>::failure(
-        {ErrorCode::signing_backend_unavailable,
-         "--ipapatch requires bundled ldid.exe or --ldid PATH", {}});
+    return Result<void>::failure({ErrorCode::signing_backend_unavailable,
+                                  "--ipapatch requires bundled ldid.exe or --ldid PATH",
+                                  {}});
   }
 
   std::optional<PlistDocument> saved_entitlements;
@@ -579,11 +579,9 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
     }
   }
 
-  std::vector<std::pair<std::filesystem::path, SigningProfile>>
-      ipapatch_additional_profiles;
-  auto preserve_additional_profile =
-      [&](const std::filesystem::path& source,
-          const std::filesystem::path& final_path) -> Result<void> {
+  std::vector<std::pair<std::filesystem::path, SigningProfile>> ipapatch_additional_profiles;
+  auto preserve_additional_profile = [&](const std::filesystem::path& source,
+                                         const std::filesystem::path& final_path) -> Result<void> {
     if (!options.ipapatch) {
       return Result<void>::success();
     }
@@ -711,8 +709,7 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
       auto framework_executable = nested_bundle_executable(destination);
       if (framework_executable) {
         auto preserved =
-            preserve_additional_profile(framework_executable.value(),
-                                        framework_executable.value());
+            preserve_additional_profile(framework_executable.value(), framework_executable.value());
         if (!preserved) {
           return preserved;
         }
@@ -761,7 +758,7 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
     log(logger, L"[*] auto-injected " + wide_name.value());
   }
 
-  if (saved_entitlements) {
+  if (saved_entitlements && !options.fakesign && !options.thin) {
     auto restored = signing->signAdHoc(app.executable(), saved_entitlements);
     if (!restored) {
       return restored;
@@ -899,25 +896,6 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
     if (!executables) {
       return Result<void>::failure(executables.error());
     }
-    if (options.fakesign) {
-      if (!signing) {
-        return Result<void>::failure({ErrorCode::signing_backend_unavailable,
-                                      "--fakesign requires bundled ldid.exe or --ldid PATH",
-                                      {}});
-      }
-      const std::optional<PlistDocument> no_entitlements;
-      for (const auto& executable : executables.value()) {
-        const bool is_main =
-            executable.lexically_normal() == app.executable().lexically_normal();
-        const auto& signing_entitlements = is_main ? saved_entitlements : no_entitlements;
-        auto signed_result = signing->signAdHoc(executable, signing_entitlements);
-        if (!signed_result) {
-          return signed_result;
-        }
-      }
-      log(logger, L"[*] fakesigned " + std::to_wstring(executables.value().size()) +
-                      L" item(s)");
-    }
     if (options.thin) {
       for (const auto& executable : executables.value()) {
         auto thinned = lief.thin_to_arm64(executable);
@@ -926,6 +904,29 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
         }
       }
       log(logger, L"[*] thinned " + std::to_wstring(executables.value().size()) + L" item(s)");
+    }
+    if (options.fakesign) {
+      if (!signing) {
+        return Result<void>::failure({ErrorCode::signing_backend_unavailable,
+                                      "--fakesign requires bundled ldid.exe or --ldid PATH",
+                                      {}});
+      }
+      const std::optional<PlistDocument> no_entitlements;
+      for (const auto& executable : executables.value()) {
+        const bool is_main = executable.lexically_normal() == app.executable().lexically_normal();
+        const auto& signing_entitlements = is_main ? saved_entitlements : no_entitlements;
+        auto signed_result = signing->signAdHoc(executable, signing_entitlements);
+        if (!signed_result) {
+          return signed_result;
+        }
+      }
+      log(logger, L"[*] fakesigned " + std::to_wstring(executables.value().size()) + L" item(s)");
+    } else if (saved_entitlements) {
+      auto restored = signing->signAdHoc(app.executable(), saved_entitlements);
+      if (!restored) {
+        return restored;
+      }
+      log(logger, L"[*] restored entitlements");
     }
   } else if (options.ipapatch) {
     IpaPatchService ipapatch_service(*signing);
@@ -940,8 +941,7 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
     patch_options.plugins_only = options.ipapatch_plugins_only;
     patch_options.compression_level = options.compression_level;
     auto prepared = ipapatch_service.prepare_open_package(
-        package_root, patch_options, ipapatch_callbacks, {},
-        std::move(ipapatch_main_profile));
+        package_root, patch_options, ipapatch_callbacks, {}, std::move(ipapatch_main_profile));
     if (!prepared) {
       return Result<void>::failure(prepared.error());
     }
@@ -957,19 +957,17 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
       final_executables = discovered.take_value();
       for (const auto& executable : final_executables) {
         const auto normalized = executable.lexically_normal();
-        const bool is_target =
-            std::any_of(plan.targets.begin(), plan.targets.end(),
-                        [&](const IpaPatchTarget& target) {
-                          return target.executable.lexically_normal() == normalized;
-                        });
+        const bool is_target = std::any_of(
+            plan.targets.begin(), plan.targets.end(), [&](const IpaPatchTarget& target) {
+              return target.executable.lexically_normal() == normalized;
+            });
         if (is_target) {
           continue;
         }
-        const bool already_preserved =
-            std::any_of(additional_profiles.begin(), additional_profiles.end(),
-                        [&](const auto& preserved) {
-                          return preserved.first.lexically_normal() == normalized;
-                        });
+        const bool already_preserved = std::any_of(
+            additional_profiles.begin(), additional_profiles.end(), [&](const auto& preserved) {
+              return preserved.first.lexically_normal() == normalized;
+            });
         if (already_preserved) {
           continue;
         }
@@ -1002,8 +1000,7 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
       return Result<void>::failure(applied.error());
     }
     auto ipapatch_result = applied.take_value();
-    auto finalized = ipapatch_service.finalize_signatures(
-        ipapatch_result, ipapatch_callbacks);
+    auto finalized = ipapatch_service.finalize_signatures(ipapatch_result, ipapatch_callbacks);
     if (!finalized) {
       return finalized;
     }
@@ -1014,8 +1011,8 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
       }
     }
     if (!additional_profiles.empty()) {
-      log(logger, L"[*] final-signed " +
-                      std::to_wstring(additional_profiles.size()) + L" additional item(s)");
+      log(logger, L"[*] final-signed " + std::to_wstring(additional_profiles.size()) +
+                      L" additional item(s)");
     }
   }
 

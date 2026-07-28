@@ -7,7 +7,7 @@
 #include <system_error>
 #include <utility>
 
-#include "cyan/archive/archive_service.hpp"
+#include "cyan/archive/zip_update_service.hpp"
 #include "cyan/core/app_bundle.hpp"
 #include "cyan/core/temporary_workspace.hpp"
 #include "cyan/macho/insert_dylib_engine.hpp"
@@ -126,8 +126,70 @@ Result<std::filesystem::path> bundle_executable(const std::filesystem::path& bun
   return Result<std::filesystem::path>::success(executable);
 }
 
-Result<std::vector<std::filesystem::path>> find_extensions(
-    const std::filesystem::path& app) {
+Result<std::filesystem::path> declared_bundle_executable(const std::filesystem::path& bundle) {
+  auto plist = PlistDocument::load(bundle / L"Info.plist");
+  if (!plist) {
+    return Result<std::filesystem::path>::failure(plist.error());
+  }
+  const auto name = plist.value().string("CFBundleExecutable");
+  if (!name || name->empty()) {
+    return Result<std::filesystem::path>::failure(
+        {ErrorCode::invalid_input_type, "bundle has no CFBundleExecutable", bundle});
+  }
+  auto wide = platform::wide_from_utf8(*name);
+  if (!wide) {
+    return Result<std::filesystem::path>::failure(wide.error());
+  }
+  const std::filesystem::path relative(wide.value());
+  if (relative.empty() || relative.is_absolute() || relative.has_parent_path()) {
+    return Result<std::filesystem::path>::failure(
+        {ErrorCode::archive_unsafe_path, "CFBundleExecutable must be a file name", bundle});
+  }
+  return Result<std::filesystem::path>::success(bundle / relative);
+}
+
+std::vector<std::wstring> path_components(const std::filesystem::path& path) {
+  std::vector<std::wstring> components;
+  for (const auto& component : path) {
+    components.push_back(component.native());
+  }
+  return components;
+}
+
+bool is_main_info_plist(const std::filesystem::path& relative) {
+  const auto components = path_components(relative);
+  return components.size() == 3U && components[0] == L"Payload" &&
+         extension_equals(std::filesystem::path(components[1]), L".app") &&
+         components[2] == L"Info.plist";
+}
+
+bool is_extension_info_plist(const std::filesystem::path& relative,
+                             const std::filesystem::path& main_bundle) {
+  const auto components = path_components(relative);
+  const auto main = path_components(main_bundle);
+  return components.size() == 5U && main.size() == 2U && components[0] == main[0] &&
+         components[1] == main[1] &&
+         (components[2] == L"PlugIns" || components[2] == L"Extensions") &&
+         extension_equals(std::filesystem::path(components[3]), L".appex") &&
+         components[4] == L"Info.plist";
+}
+
+Result<std::filesystem::path> relative_to_package(const std::filesystem::path& path,
+                                                  const std::filesystem::path& package_root) {
+  const auto relative = path.lexically_normal().lexically_relative(package_root.lexically_normal());
+  if (relative.empty() || relative.is_absolute()) {
+    return Result<std::filesystem::path>::failure(
+        {ErrorCode::archive_unsafe_path, "path is outside the package root", path});
+  }
+  const auto components = path_components(relative);
+  if (components.empty() || components.front() == L"..") {
+    return Result<std::filesystem::path>::failure(
+        {ErrorCode::archive_unsafe_path, "path is outside the package root", path});
+  }
+  return Result<std::filesystem::path>::success(relative);
+}
+
+Result<std::vector<std::filesystem::path>> find_extensions(const std::filesystem::path& app) {
   std::vector<std::filesystem::path> result;
   for (const auto* directory_name : {L"PlugIns", L"Extensions"}) {
     const auto directory = app / directory_name;
@@ -207,9 +269,9 @@ Result<void> install_payload(const std::filesystem::path& source,
   std::error_code error;
   std::filesystem::create_directories(destination.parent_path(), error);
   if (error || is_reparse_point(destination.parent_path())) {
-    return Result<void>::failure(
-        {ErrorCode::filesystem_error, "could not create app Frameworks directory",
-         destination.parent_path()});
+    return Result<void>::failure({ErrorCode::filesystem_error,
+                                  "could not create app Frameworks directory",
+                                  destination.parent_path()});
   }
   if (!std::filesystem::copy_file(source, destination,
                                   std::filesystem::copy_options::overwrite_existing, error) ||
@@ -242,27 +304,23 @@ Result<void> inject_one(const std::filesystem::path& executable, std::string_vie
   if (injected.error == InjectionError::DuplicateLoadCommand) {
     return Result<void>::failure(
         {ErrorCode::injection_failed,
-         "load command '" + std::string(load_command) +
-             "' already exists (already patched)",
+         "load command '" + std::string(load_command) + "' already exists (already patched)",
          executable});
   }
 
-  const bool can_fallback =
-      !has_skipped_fat_slices &&
-      (injected.error == InjectionError::InsufficientLoadCommandSpace ||
-       injected.error == InjectionError::CodeSignatureLayoutUnsupported ||
-       injected.error == InjectionError::LinkEditNotAtEnd ||
-       injected.error == InjectionError::InvalidSymtab ||
-       injected.error == InjectionError::UnsupportedArchitecture);
+  const bool can_fallback = !has_skipped_fat_slices &&
+                            (injected.error == InjectionError::InsufficientLoadCommandSpace ||
+                             injected.error == InjectionError::CodeSignatureLayoutUnsupported ||
+                             injected.error == InjectionError::LinkEditNotAtEnd ||
+                             injected.error == InjectionError::InvalidSymtab ||
+                             injected.error == InjectionError::UnsupportedArchitecture);
   if (!can_fallback) {
-    return Result<void>::failure(
-        {ErrorCode::injection_failed, injected.message, executable});
+    return Result<void>::failure({ErrorCode::injection_failed, injected.message, executable});
   }
   LiefMachOBackend lief;
   const auto fallback = lief.inject(executable, load_command, options);
   if (fallback.error != InjectionError::None) {
-    return Result<void>::failure(
-        {ErrorCode::injection_failed, fallback.message, executable});
+    return Result<void>::failure({ErrorCode::injection_failed, fallback.message, executable});
   }
   return Result<void>::success();
 }
@@ -297,9 +355,8 @@ Result<IpaPatchPlan> IpaPatchService::prepare_open_package(
     return Result<IpaPatchPlan>::failure(not_cancelled.error());
   }
 
-  const auto payload_source =
-      options.dylib.value_or(options.default_dylib.empty() ? bundled_payload_path()
-                                                          : options.default_dylib);
+  const auto payload_source = options.dylib.value_or(
+      options.default_dylib.empty() ? bundled_payload_path() : options.default_dylib);
   auto payload_valid = validate_payload(payload_source);
   if (!payload_valid) {
     return Result<IpaPatchPlan>::failure(payload_valid.error());
@@ -346,13 +403,12 @@ Result<IpaPatchPlan> IpaPatchService::prepare_open_package(
     if (!identifier) {
       return Result<IpaPatchPlan>::failure(identifier.error());
     }
-    plan.targets.push_back(
-        {extension, executable.take_value(), identifier.take_value(), {}});
+    plan.targets.push_back({extension, executable.take_value(), identifier.take_value(), {}});
   }
   if (plan.targets.empty()) {
-    return Result<IpaPatchPlan>::failure(
-        {ErrorCode::invalid_argument, "no eligible app or extension executable was found",
-         app.value().path()});
+    return Result<IpaPatchPlan>::failure({ErrorCode::invalid_argument,
+                                          "no eligible app or extension executable was found",
+                                          app.value().path()});
   }
 
   report(callbacks, IpaPatchStage::discovering, app.value().path(), plan.targets.size(),
@@ -367,17 +423,15 @@ Result<IpaPatchPlan> IpaPatchService::prepare_open_package(
     if (!info) {
       return Result<IpaPatchPlan>::failure(info.error());
     }
-    const bool duplicate =
-        std::any_of(info.value().slices.begin(), info.value().slices.end(),
-                    [&](const MachOSliceInfo& slice) {
-                      return std::find(slice.dependencies.begin(), slice.dependencies.end(),
-                                       plan.load_command) != slice.dependencies.end();
-                    });
+    const bool duplicate = std::any_of(
+        info.value().slices.begin(), info.value().slices.end(), [&](const MachOSliceInfo& slice) {
+          return std::find(slice.dependencies.begin(), slice.dependencies.end(),
+                           plan.load_command) != slice.dependencies.end();
+        });
     if (duplicate) {
       return Result<IpaPatchPlan>::failure(
           {ErrorCode::injection_failed,
-           "load command '" + plan.load_command +
-               "' already exists (already patched)",
+           "load command '" + plan.load_command + "' already exists (already patched)",
            plan.targets[index].executable});
     }
     if (info.value().is_fat &&
@@ -385,14 +439,13 @@ Result<IpaPatchPlan> IpaPatchService::prepare_open_package(
                      [](const MachOSliceInfo& slice) {
                        return static_cast<std::uint32_t>(slice.cpu_subtype) <= 2U;
                      })) {
-      return Result<IpaPatchPlan>::failure(
-          {ErrorCode::macho_unsupported,
-           "FAT Mach-O has no slice supported by ipapatch v2.1.3",
-           plan.targets[index].executable});
+      return Result<IpaPatchPlan>::failure({ErrorCode::macho_unsupported,
+                                            "FAT Mach-O has no slice supported by ipapatch v2.1.3",
+                                            plan.targets[index].executable});
     }
 
-    const bool is_main = plan.targets[index].bundle.lexically_normal() ==
-                         app.value().path().lexically_normal();
+    const bool is_main =
+        plan.targets[index].bundle.lexically_normal() == app.value().path().lexically_normal();
     if (is_main && main_profile_override) {
       plan.targets[index].signing_profile = std::move(*main_profile_override);
       main_profile_override.reset();
@@ -404,20 +457,19 @@ Result<IpaPatchPlan> IpaPatchService::prepare_open_package(
       plan.targets[index].signing_profile = profile.take_value();
     }
     if (plan.targets[index].signing_profile.identifier.empty()) {
-      plan.targets[index].signing_profile.identifier =
-          plan.targets[index].bundle_identifier.empty()
-              ? std::string(fallback_identifier)
-              : plan.targets[index].bundle_identifier;
+      plan.targets[index].signing_profile.identifier = plan.targets[index].bundle_identifier.empty()
+                                                           ? std::string(fallback_identifier)
+                                                           : plan.targets[index].bundle_identifier;
     }
-    report(callbacks, IpaPatchStage::capturing_signatures,
-           plan.targets[index].executable, index + 1U, plan.targets.size());
+    report(callbacks, IpaPatchStage::capturing_signatures, plan.targets[index].executable,
+           index + 1U, plan.targets.size());
   }
   return Result<IpaPatchPlan>::success(std::move(plan));
 }
 
-Result<IpaPatchApplyResult> IpaPatchService::apply_prepared(
-    IpaPatchPlan plan, const IpaPatchCallbacks& callbacks,
-    std::stop_token stop_token) const {
+Result<IpaPatchApplyResult> IpaPatchService::apply_prepared(IpaPatchPlan plan,
+                                                            const IpaPatchCallbacks& callbacks,
+                                                            std::stop_token stop_token) const {
   MachOInspector inspector;
   for (std::size_t index = 0; index < plan.targets.size(); ++index) {
     auto not_cancelled = cancelled(stop_token, plan.targets[index].executable);
@@ -433,8 +485,8 @@ Result<IpaPatchApplyResult> IpaPatchService::apply_prepared(
     if (!injected) {
       return Result<IpaPatchApplyResult>::failure(injected.error());
     }
-    report(callbacks, IpaPatchStage::injecting, plan.targets[index].executable,
-           index + 1U, plan.targets.size());
+    report(callbacks, IpaPatchStage::injecting, plan.targets[index].executable, index + 1U,
+           plan.targets.size());
   }
 
   auto installed = install_payload(plan.payload_source, plan.payload_destination);
@@ -455,29 +507,30 @@ Result<IpaPatchApplyResult> IpaPatchService::apply_to_open_package(
   return apply_prepared(prepared.take_value(), callbacks, stop_token);
 }
 
-Result<void> IpaPatchService::finalize_signatures(
-    const IpaPatchApplyResult& result, const IpaPatchCallbacks& callbacks,
-    std::stop_token stop_token) const {
+Result<void> IpaPatchService::finalize_signatures(const IpaPatchApplyResult& result,
+                                                  const IpaPatchCallbacks& callbacks,
+                                                  std::stop_token stop_token) const {
   for (std::size_t index = 0; index < result.targets.size(); ++index) {
     auto not_cancelled = cancelled(stop_token, result.targets[index].executable);
     if (!not_cancelled) {
       return not_cancelled;
     }
-    auto signed_result = signing_backend_.signAdHoc(
-        result.targets[index].executable, result.targets[index].signing_profile);
+    auto signed_result = signing_backend_.signAdHoc(result.targets[index].executable,
+                                                    result.targets[index].signing_profile);
     if (!signed_result) {
       return signed_result;
     }
-    report(callbacks, IpaPatchStage::signing, result.targets[index].executable,
-           index + 1U, result.targets.size());
+    report(callbacks, IpaPatchStage::signing, result.targets[index].executable, index + 1U,
+           result.targets.size());
   }
   return Result<void>::success();
 }
 
-Result<void> IpaPatchService::run_standalone(
-    const std::filesystem::path& input_ipa, const std::filesystem::path& output_ipa,
-    const IpaPatchOptions& options, const IpaPatchCallbacks& callbacks,
-    std::stop_token stop_token) const {
+Result<void> IpaPatchService::run_standalone(const std::filesystem::path& input_ipa,
+                                             const std::filesystem::path& output_ipa,
+                                             const IpaPatchOptions& options,
+                                             const IpaPatchCallbacks& callbacks,
+                                             std::stop_token stop_token) const {
   report(callbacks, IpaPatchStage::validating, input_ipa, 0U, 1U);
   if (!extension_equals(input_ipa, L".ipa") && !extension_equals(input_ipa, L".tipa")) {
     return Result<void>::failure(
@@ -488,8 +541,7 @@ Result<void> IpaPatchService::run_standalone(
         {ErrorCode::invalid_output_type, "ipapatch output must be an IPA or TIPA", output_ipa});
   }
   std::error_code error;
-  if (!std::filesystem::is_regular_file(input_ipa, error) || error ||
-      is_reparse_point(input_ipa)) {
+  if (!std::filesystem::is_regular_file(input_ipa, error) || error || is_reparse_point(input_ipa)) {
     return Result<void>::failure(
         {ErrorCode::file_not_found, "input IPA does not exist", input_ipa});
   }
@@ -504,11 +556,56 @@ Result<void> IpaPatchService::run_standalone(
   }
   auto workspace = workspace_result.take_value();
   const auto package_root = workspace.path() / L"package";
-  ArchiveService archive;
+  ZipUpdateService archive;
   report(callbacks, IpaPatchStage::extracting, input_ipa, 0U, 1U);
-  auto extracted = archive.extract(input_ipa, package_root);
-  if (!extracted) {
-    return extracted;
+
+  auto listed = archive.list_entries(input_ipa);
+  if (!listed) {
+    return Result<void>::failure(listed.error());
+  }
+  std::vector<std::filesystem::path> main_plists;
+  for (const auto& entry : listed.value()) {
+    if (!entry.is_directory && is_main_info_plist(entry.relative_path)) {
+      main_plists.push_back(entry.relative_path);
+    }
+  }
+  std::sort(main_plists.begin(), main_plists.end());
+  if (main_plists.empty()) {
+    return Result<void>::failure(
+        {ErrorCode::invalid_input_type, "IPA Payload has no valid app bundle", input_ipa});
+  }
+
+  const std::filesystem::path main_bundle = main_plists.front().parent_path();
+  std::vector<std::filesystem::path> plist_entries{main_plists.front()};
+  for (const auto& entry : listed.value()) {
+    if (!entry.is_directory && is_extension_info_plist(entry.relative_path, main_bundle)) {
+      plist_entries.push_back(entry.relative_path);
+    }
+  }
+  std::sort(plist_entries.begin(), plist_entries.end());
+  auto extracted_plists =
+      archive.extract_entries(input_ipa, package_root, plist_entries, listed.value());
+  if (!extracted_plists) {
+    return extracted_plists;
+  }
+
+  std::vector<std::filesystem::path> executable_entries;
+  executable_entries.reserve(plist_entries.size());
+  for (const auto& plist_entry : plist_entries) {
+    auto executable = declared_bundle_executable((package_root / plist_entry).parent_path());
+    if (!executable) {
+      return Result<void>::failure(executable.error());
+    }
+    auto relative = relative_to_package(executable.value(), package_root);
+    if (!relative) {
+      return Result<void>::failure(relative.error());
+    }
+    executable_entries.push_back(relative.take_value());
+  }
+  auto extracted_executables =
+      archive.extract_entries(input_ipa, package_root, executable_entries, listed.value());
+  if (!extracted_executables) {
+    return extracted_executables;
   }
   report(callbacks, IpaPatchStage::extracting, input_ipa, 1U, 1U);
 
@@ -526,8 +623,23 @@ Result<void> IpaPatchService::run_standalone(
   }
 
   report(callbacks, IpaPatchStage::packaging, output_ipa, 0U, 1U);
+  std::vector<ZipReplacement> replacements;
+  replacements.reserve(applied.value().targets.size() + 1U);
+  for (const auto& target : applied.value().targets) {
+    auto relative = relative_to_package(target.executable, package_root);
+    if (!relative) {
+      return Result<void>::failure(relative.error());
+    }
+    replacements.push_back({relative.take_value(), target.executable, true});
+  }
+  auto payload_relative = relative_to_package(applied.value().payload_destination, package_root);
+  if (!payload_relative) {
+    return Result<void>::failure(payload_relative.error());
+  }
+  replacements.push_back(
+      {payload_relative.take_value(), applied.value().payload_destination, true});
   auto packaged =
-      archive.create_zip(package_root, output_ipa, options.compression_level, false);
+      archive.update(input_ipa, output_ipa, replacements, options.compression_level, stop_token);
   if (!packaged) {
     return packaged;
   }

@@ -9,7 +9,7 @@ $packages = @(
   @{
     SPDXID = 'SPDXRef-Package-cyan-cpp'
     name = 'cyan-cpp'
-    versionInfo = '0.2.0'
+    versionInfo = '0.3.0'
     downloadLocation = 'NOASSERTION'
     filesAnalyzed = $false
     licenseConcluded = 'MIT'
@@ -34,6 +34,16 @@ $packages = @(
     filesAnalyzed = $false
     licenseConcluded = 'BSD-2-Clause'
     licenseDeclared = 'BSD-2-Clause'
+    copyrightText = 'NOASSERTION'
+  },
+  @{
+    SPDXID = 'SPDXRef-Package-libzip'
+    name = 'libzip'
+    versionInfo = '1.11.4'
+    downloadLocation = 'https://github.com/nih-at/libzip/archive/refs/tags/v1.11.4.tar.gz'
+    filesAnalyzed = $false
+    licenseConcluded = 'BSD-3-Clause'
+    licenseDeclared = 'BSD-3-Clause'
     copyrightText = 'NOASSERTION'
   },
   @{
@@ -73,6 +83,11 @@ $relationships = @(
     spdxElementId = 'SPDXRef-Package-cyan-cpp'
     relationshipType = 'DEPENDS_ON'
     relatedSpdxElement = 'SPDXRef-Package-libarchive'
+  },
+  @{
+    spdxElementId = 'SPDXRef-Package-cyan-cpp'
+    relationshipType = 'DEPENDS_ON'
+    relatedSpdxElement = 'SPDXRef-Package-libzip'
   },
   @{
     spdxElementId = 'SPDXRef-Package-cyan-cpp'

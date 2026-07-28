@@ -4,7 +4,7 @@ cmake_policy(SET CMP0091 NEW)
 
 project(
   cyan-cpp
-  VERSION 0.2.0
+  VERSION 0.3.0
   DESCRIPTION "Native Windows C++20 rewrite of cyan"
   LANGUAGES CXX
 )
@@ -71,11 +71,12 @@ add_library(
   src/archive/archive_path_validator.cpp
   src/archive/archive_service.cpp
   src/archive/cyan_archive.cpp
+  src/archive/zip_update_service.cpp
 )
 target_link_libraries(
   cyan_archive
   PUBLIC cyan_core
-  PRIVATE LibArchive::LibArchive nlohmann_json::nlohmann_json
+  PRIVATE LibArchive::LibArchive libzip::zip nlohmann_json::nlohmann_json
 )
 cyan_set_project_warnings(cyan_archive)
 

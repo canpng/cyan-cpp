@@ -261,6 +261,22 @@ Result<std::vector<CommonDependency>> LiefMachOBackend::repair_dependencies(
 }
 
 Result<void> LiefMachOBackend::thin_to_arm64(const std::filesystem::path& binary) const {
+  MachOInspector inspector;
+  auto inspected = inspector.inspect(binary);
+  if (!inspected) {
+    return Result<void>::failure(inspected.error());
+  }
+  const bool has_arm64 =
+      std::any_of(inspected.value().slices.begin(), inspected.value().slices.end(),
+                  [](const MachOSliceInfo& slice) { return slice.cpu_type == 0x0100000c; });
+  if (!has_arm64) {
+    return Result<void>::failure(
+        {ErrorCode::macho_unsupported, "Mach-O has no arm64 slice", binary});
+  }
+  if (!inspected.value().is_fat && inspected.value().slices.size() == 1U) {
+    return Result<void>::success();
+  }
+
   InjectionResult read_error;
   auto bytes = read_all(binary, read_error);
   if (!bytes) {
@@ -292,7 +308,6 @@ Result<void> LiefMachOBackend::thin_to_arm64(const std::filesystem::path& binary
     if (!published) {
       return published;
     }
-    MachOInspector inspector;
     auto verified = inspector.inspect(binary);
     if (!verified || verified.value().slices.size() != 1U ||
         verified.value().slices.front().cpu_type !=

@@ -134,8 +134,10 @@ Result<SigningProfile> ExternalLdidSigningBackend::captureProfile(
   profile.identifier = first.identifier;
   profile.team_identifier = first.team_identifier;
   if (!profile.team_identifier.empty()) {
-    const auto team_id_probe = run({L"-t"}, std::nullopt);
-    if (!team_id_probe) {
+    if (!team_id_supported_.has_value()) {
+      team_id_supported_ = static_cast<bool>(run({L"-t"}, std::nullopt));
+    }
+    if (!*team_id_supported_) {
       return Result<SigningProfile>::failure(
           {ErrorCode::feature_unavailable,
            "the configured ldid does not support -tTeamID; use the bundled Team ID-capable "
@@ -204,7 +206,7 @@ Result<void> ExternalLdidSigningBackend::removeSignature(const std::filesystem::
 
 Result<void> ExternalLdidSigningBackend::signAdHoc(
     const std::filesystem::path& executable, const std::optional<PlistDocument>& entitlements) {
-  return sign(executable, entitlements, {}, {}, signature_adhoc, 0U);
+  return sign(executable, entitlements, {}, {}, signature_adhoc, 0U, true);
 }
 
 Result<void> ExternalLdidSigningBackend::signAdHoc(
@@ -217,7 +219,7 @@ Result<void> ExternalLdidSigningBackend::signAdHoc(
   }
   auto signed_result =
       sign(executable, profile.entitlements, profile.identifier, profile.team_identifier, flags,
-           profile.platform);
+           profile.platform, false);
   if (!signed_result) {
     return signed_result;
   }
@@ -246,7 +248,7 @@ Result<void> ExternalLdidSigningBackend::sign(
     const std::filesystem::path& executable,
     const std::optional<PlistDocument>& entitlements, std::string_view identifier,
     std::string_view team_identifier, std::uint32_t flags,
-    std::uint8_t code_directory_platform) const {
+    std::uint8_t code_directory_platform, bool verify_signature) const {
   std::vector<std::wstring> arguments;
   std::optional<TemporaryWorkspace> workspace;
   if (entitlements) {
@@ -287,7 +289,7 @@ Result<void> ExternalLdidSigningBackend::sign(
   if (!signed_result) {
     return signed_result;
   }
-  return verify_signed(executable);
+  return verify_signature ? verify_signed(executable) : Result<void>::success();
 }
 
 }  // namespace cyan

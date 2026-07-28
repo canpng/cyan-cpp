@@ -1,8 +1,8 @@
 #include <Windows.h>
-
-#include <algorithm>
 #include <archive.h>
 #include <archive_entry.h>
+
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <cstdint>
@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "cyan/archive/archive_service.hpp"
+#include "cyan/archive/zip_update_service.hpp"
 #include "cyan/ipapatch/ipapatch_service.hpp"
 #include "cyan/macho/macho_inspector.hpp"
 #include "cyan/platform/utf.hpp"
@@ -59,16 +60,14 @@ void put_name(std::vector<std::uint8_t>& bytes, std::size_t offset, std::string_
   std::copy(name.begin(), name.end(), bytes.begin() + static_cast<std::ptrdiff_t>(offset));
 }
 
-void put32be(std::vector<std::uint8_t>& bytes, std::size_t offset,
-             std::uint32_t value) {
+void put32be(std::vector<std::uint8_t>& bytes, std::size_t offset, std::uint32_t value) {
   bytes[offset] = static_cast<std::uint8_t>(value >> 24U);
   bytes[offset + 1U] = static_cast<std::uint8_t>(value >> 16U);
   bytes[offset + 2U] = static_cast<std::uint8_t>(value >> 8U);
   bytes[offset + 3U] = static_cast<std::uint8_t>(value);
 }
 
-std::vector<std::uint8_t> synthetic_macho(
-    std::uint32_t cpu_type = 0x0100000cU) {
+std::vector<std::uint8_t> synthetic_macho(std::uint32_t cpu_type = 0x0100000cU) {
   std::vector<std::uint8_t> bytes(0x800U, 0U);
   put32(bytes, 0U, 0xfeedfacfU);
   put32(bytes, 4U, cpu_type);
@@ -114,14 +113,33 @@ std::vector<std::uint8_t> synthetic_fat() {
   return bytes;
 }
 
-void write_bytes(const std::filesystem::path& path,
-                 const std::vector<std::uint8_t>& bytes) {
+void write_bytes(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes) {
   std::filesystem::create_directories(path.parent_path());
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   REQUIRE(output);
   output.write(reinterpret_cast<const char*>(bytes.data()),
                static_cast<std::streamsize>(bytes.size()));
   REQUIRE(output);
+}
+
+void write_zip_entry(const std::filesystem::path& path, std::string_view name,
+                     const std::vector<std::uint8_t>& bytes) {
+  archive* writer = archive_write_new();
+  REQUIRE(writer != nullptr);
+  REQUIRE(archive_write_set_format_zip(writer) == ARCHIVE_OK);
+  REQUIRE(archive_write_open_filename_w(writer, path.c_str()) == ARCHIVE_OK);
+  archive_entry* entry = archive_entry_new();
+  REQUIRE(entry != nullptr);
+  archive_entry_set_pathname(entry, std::string(name).c_str());
+  archive_entry_set_filetype(entry, AE_IFREG);
+  archive_entry_set_perm(entry, 0644);
+  archive_entry_set_size(entry, static_cast<la_int64_t>(bytes.size()));
+  REQUIRE(archive_write_header(writer, entry) == ARCHIVE_OK);
+  REQUIRE(archive_write_data(writer, bytes.data(), bytes.size()) ==
+          static_cast<la_ssize_t>(bytes.size()));
+  archive_entry_free(entry);
+  REQUIRE(archive_write_close(writer) == ARCHIVE_OK);
+  REQUIRE(archive_write_free(writer) == ARCHIVE_OK);
 }
 
 std::vector<std::uint8_t> read_bytes(const std::filesystem::path& path) {
@@ -132,8 +150,7 @@ std::vector<std::uint8_t> read_bytes(const std::filesystem::path& path) {
   std::vector<std::uint8_t> bytes(static_cast<std::size_t>(length));
   input.seekg(0);
   if (!bytes.empty()) {
-    input.read(reinterpret_cast<char*>(bytes.data()),
-               static_cast<std::streamsize>(bytes.size()));
+    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
   }
   REQUIRE(input);
   return bytes;
@@ -158,8 +175,7 @@ class RecordingSigner final : public cyan::ISigningBackend {
     if (!document) {
       return cyan::Result<cyan::SigningProfile>::failure(document.error());
     }
-    auto encoded =
-        cyan::platform::utf8_from_wide(executable.parent_path().filename().native());
+    auto encoded = cyan::platform::utf8_from_wide(executable.parent_path().filename().native());
     if (!encoded) {
       return cyan::Result<cyan::SigningProfile>::failure(encoded.error());
     }
@@ -176,8 +192,8 @@ class RecordingSigner final : public cyan::ISigningBackend {
     return cyan::Result<cyan::SigningProfile>::success(std::move(profile));
   }
 
-  cyan::Result<void> extractEntitlements(
-      const std::filesystem::path&, cyan::PlistDocument&) override {
+  cyan::Result<void> extractEntitlements(const std::filesystem::path&,
+                                         cyan::PlistDocument&) override {
     return cyan::Result<void>::failure(
         {cyan::ErrorCode::internal_error, "unexpected legacy entitlement extraction", {}});
   }
@@ -186,16 +202,14 @@ class RecordingSigner final : public cyan::ISigningBackend {
     return cyan::Result<void>::success();
   }
 
-  cyan::Result<void> signAdHoc(
-      const std::filesystem::path& executable,
-      const std::optional<cyan::PlistDocument>&) override {
+  cyan::Result<void> signAdHoc(const std::filesystem::path& executable,
+                               const std::optional<cyan::PlistDocument>&) override {
     signed_paths.push_back(executable);
     return cyan::Result<void>::success();
   }
 
-  cyan::Result<void> signAdHoc(
-      const std::filesystem::path& executable,
-      const cyan::SigningProfile& profile) override {
+  cyan::Result<void> signAdHoc(const std::filesystem::path& executable,
+                               const cyan::SigningProfile& profile) override {
     signed_paths.push_back(executable);
     signed_profiles.push_back(
         profile.entitlements ? profile.entitlements->string("profile").value_or("") : "");
@@ -206,15 +220,13 @@ class RecordingSigner final : public cyan::ISigningBackend {
   std::vector<std::string> signed_profiles;
 };
 
-std::filesystem::path test_payload() {
-  return std::filesystem::path(CYAN_TEST_IPAPATCH_PAYLOAD);
-}
+std::filesystem::path test_payload() { return std::filesystem::path(CYAN_TEST_IPAPATCH_PAYLOAD); }
 
 std::filesystem::path tool_from_environment(std::wstring_view name) {
   std::vector<wchar_t> buffer(32768U);
   const std::wstring owned(name);
-  const DWORD length = GetEnvironmentVariableW(owned.c_str(), buffer.data(),
-                                               static_cast<DWORD>(buffer.size()));
+  const DWORD length =
+      GetEnvironmentVariableW(owned.c_str(), buffer.data(), static_cast<DWORD>(buffer.size()));
   if (length == 0U || static_cast<std::size_t>(length) >= buffer.size()) {
     return {};
   }
@@ -305,15 +317,15 @@ int zip_permissions(const std::filesystem::path& zip, std::string_view entry_nam
   return permissions;
 }
 
-void require_dependency(const std::filesystem::path& executable,
-                        std::string_view dependency, bool expected) {
+void require_dependency(const std::filesystem::path& executable, std::string_view dependency,
+                        bool expected) {
   cyan::MachOInspector inspector;
   auto inspected = inspector.inspect(executable);
   REQUIRE(inspected);
   REQUIRE(inspected.value().slices.size() == 1U);
   const auto& dependencies = inspected.value().slices.front().dependencies;
-  CHECK((std::find(dependencies.begin(), dependencies.end(), dependency) !=
-         dependencies.end()) == expected);
+  CHECK((std::find(dependencies.begin(), dependencies.end(), dependency) != dependencies.end()) ==
+        expected);
 }
 
 }  // namespace
@@ -392,7 +404,7 @@ TEST_CASE("ipapatch detects an existing load command before publishing output") 
   CHECK(duplicate.error().message.find("already patched") != std::string::npos);
 }
 
-TEST_CASE("standalone ipapatch extracts and packages once and preserves input on failure") {
+TEST_CASE("standalone ipapatch selectively updates once and preserves input on failure") {
   TemporaryDirectory fixture(L"-Yol Boşluk-ğ");
   const auto source_package = fixture.path() / L"source";
   const auto app = source_package / L"Payload" / L"Test.app";
@@ -403,10 +415,8 @@ TEST_CASE("standalone ipapatch extracts and packages once and preserves input on
   cyan::ArchiveService archive;
   REQUIRE(archive.create_zip(source_package, input, 1, false));
   const auto original = read_bytes(input);
-  const int original_executable_permissions =
-      zip_permissions(input, "Payload/Test.app/Main");
-  const int original_plist_permissions =
-      zip_permissions(input, "Payload/Test.app/Info.plist");
+  const int original_executable_permissions = zip_permissions(input, "Payload/Test.app/Main");
+  const int original_plist_permissions = zip_permissions(input, "Payload/Test.app/Info.plist");
 
   RecordingSigner signer;
   cyan::IpaPatchService service(signer);
@@ -426,27 +436,35 @@ TEST_CASE("standalone ipapatch extracts and packages once and preserves input on
   CHECK(extracts == 1U);
   CHECK(packages == 1U);
   CHECK(read_bytes(input) == original);
-  CHECK(zip_permissions(output, "Payload/Test.app/Main") ==
-        original_executable_permissions);
-  CHECK(zip_permissions(output, "Payload/Test.app/Info.plist") ==
-        original_plist_permissions);
-  CHECK(zip_permissions(output,
-                        "Payload/Test.app/Frameworks/zxPluginsInject.dylib") == 0755);
+  CHECK(zip_permissions(output, "Payload/Test.app/Main") == original_executable_permissions);
+  CHECK(zip_permissions(output, "Payload/Test.app/Info.plist") == original_plist_permissions);
+  CHECK(zip_permissions(output, "Payload/Test.app/Frameworks/zxPluginsInject.dylib") == 0755);
 
   const auto extracted = fixture.path() / L"output-tree";
   REQUIRE(archive.extract(output, extracted));
-  require_dependency(extracted / L"Payload" / L"Test.app" / L"Main",
-                     "@rpath/zxPluginsInject.dylib", true);
-  CHECK(std::filesystem::is_regular_file(
-      extracted / L"Payload" / L"Test.app" / L".preserved-hidden-file"));
+  require_dependency(extracted / L"Payload" / L"Test.app" / L"Main", "@rpath/zxPluginsInject.dylib",
+                     true);
+  CHECK(std::filesystem::is_regular_file(extracted / L"Payload" / L"Test.app" /
+                                         L".preserved-hidden-file"));
 
   const auto patched_input = fixture.path() / L"Patched.ipa";
   REQUIRE(std::filesystem::copy_file(output, patched_input));
   const auto before_failure = read_bytes(patched_input);
-  auto failed_inplace =
-      service.run_standalone(patched_input, patched_input, options);
+  auto failed_inplace = service.run_standalone(patched_input, patched_input, options);
   REQUIRE_FALSE(failed_inplace);
   CHECK(read_bytes(patched_input) == before_failure);
+}
+
+TEST_CASE("selective ZIP updates reject unsafe archive paths before mutation") {
+  TemporaryDirectory fixture;
+  const auto input = fixture.path() / L"Unsafe.ipa";
+  write_zip_entry(input, "../outside", {1U, 2U, 3U});
+
+  cyan::ZipUpdateService updater;
+  auto listed = updater.list_entries(input);
+  REQUIRE_FALSE(listed);
+  CHECK(listed.error().code == cyan::ErrorCode::archive_unsafe_path);
+  CHECK_FALSE(std::filesystem::exists(fixture.path().parent_path() / L"outside"));
 }
 
 TEST_CASE("standalone ipapatch executable uses the shared backend and bundled payload") {
@@ -466,14 +484,13 @@ TEST_CASE("standalone ipapatch executable uses the shared backend and bundled pa
   REQUIRE(archive.create_zip(package, input, 1, false));
   const auto original = read_bytes(input);
 
-  REQUIRE(run_process(cli, {L"--input", input.native(), L"--output",
-                            output.native(), L"--noconfirm"}));
+  REQUIRE(
+      run_process(cli, {L"--input", input.native(), L"--output", output.native(), L"--noconfirm"}));
   CHECK(read_bytes(input) == original);
 
   const auto extracted = fixture.path() / L"output";
   REQUIRE(archive.extract(output, extracted));
-  const auto executable =
-      extracted / L"Payload" / L"Standalone.app" / L"Main";
+  const auto executable = extracted / L"Payload" / L"Standalone.app" / L"Main";
   require_dependency(executable, "@rpath/zxPluginsInject.dylib", true);
   cyan::MachOInspector inspector;
   auto inspected = inspector.inspect(executable);
@@ -505,9 +522,9 @@ TEST_CASE("C++ output is structurally equivalent to ipapatch v2.1.3") {
   cyan::IpaPatchOptions options;
   options.dylib = test_payload();
   REQUIRE(service.run_standalone(input, cpp_output, options));
-  REQUIRE(run_process(reference,
-                      {L"--input", input.native(), L"--output", reference_output.native(),
-                       L"--dylib", test_payload().native(), L"--noconfirm"}));
+  REQUIRE(
+      run_process(reference, {L"--input", input.native(), L"--output", reference_output.native(),
+                              L"--dylib", test_payload().native(), L"--noconfirm"}));
 
   const auto cpp_tree = fixture.path() / L"cpp-tree";
   const auto reference_tree = fixture.path() / L"reference-tree";
@@ -534,7 +551,6 @@ TEST_CASE("C++ output is structurally equivalent to ipapatch v2.1.3") {
   const auto payload_relative =
       std::filesystem::path(L"Payload/Diff.app/Frameworks/zxPluginsInject.dylib");
   const bool payload_equal =
-      read_bytes(cpp_tree / payload_relative) ==
-      read_bytes(reference_tree / payload_relative);
+      read_bytes(cpp_tree / payload_relative) == read_bytes(reference_tree / payload_relative);
   CHECK(payload_equal);
 }

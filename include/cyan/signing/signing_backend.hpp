@@ -61,9 +61,11 @@ class ExternalLdidSigningBackend final : public ISigningBackend {
   Result<void> sign(const std::filesystem::path& executable,
                     const std::optional<PlistDocument>& entitlements,
                     std::string_view identifier, std::string_view team_identifier,
-                    std::uint32_t flags, std::uint8_t code_directory_platform) const;
+                    std::uint32_t flags, std::uint8_t code_directory_platform,
+                    bool verify_signature) const;
 
   std::filesystem::path executable_;
+  std::optional<bool> team_id_supported_;
 };
 
 }  // namespace cyan
