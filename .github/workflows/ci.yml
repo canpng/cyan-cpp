@@ -14,7 +14,7 @@ jobs:
     runs-on: windows-2022
 
     env:
-      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_ROOT: V:\
       VCPKG_DISABLE_METRICS: "1"
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
 
@@ -29,19 +29,41 @@ jobs:
           ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
           path: vcpkg
 
+      - name: Map vcpkg to short path
+        shell: pwsh
+        run: |
+          if (Test-Path "V:\") {
+            throw "V: drive is already in use"
+          }
+          subst V: "${{ github.workspace }}\vcpkg"
+          if (-not (Test-Path "$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -PathType Leaf)) {
+            throw "failed to map vcpkg to V:"
+          }
+
+      - name: Create Release-only vcpkg triplet
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:VCPKG_ROOT\cyan-triplets" | Out-Null
+          @"
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_LIBRARY_LINKAGE dynamic)
+          set(VCPKG_BUILD_TYPE release)
+          "@ | Set-Content "$env:VCPKG_ROOT\cyan-triplets\x64-windows-release.cmake" -Encoding ascii
+
       - name: Restore pinned vcpkg tool
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: ${{ env.VCPKG_ROOT }}\vcpkg.exe
+          path: ${{ github.workspace }}\vcpkg\vcpkg.exe
           key: vcpkg-tool-windows-cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
 
       - name: Restore vcpkg binary cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-windows-2022-release-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-windows-2022-release-only-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
           restore-keys: |
-            vcpkg-windows-2022-release-
+            vcpkg-windows-2022-release-only-
 
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -58,7 +80,8 @@ jobs:
           cmake -S . -B out\build\windows-release `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-release `
+            -DVCPKG_OVERLAY_TRIPLETS="$env:VCPKG_ROOT\cyan-triplets" `
             -DVCPKG_MANIFEST_FEATURES=gui `
             -DCYAN_BUILD_GUI=ON `
             -DCYAN_LDID_EXECUTABLE="${{ github.workspace }}\out\tools\ldid.exe" `
