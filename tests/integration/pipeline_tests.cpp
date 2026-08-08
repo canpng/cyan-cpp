@@ -180,8 +180,8 @@ void make_app(const std::filesystem::path& app) {
 
 std::filesystem::path ldid_from_environment() {
   std::vector<wchar_t> buffer(32768U);
-  const DWORD length = GetEnvironmentVariableW(L"CYAN_TEST_LDID", buffer.data(),
-                                               static_cast<DWORD>(buffer.size()));
+  const DWORD length =
+      GetEnvironmentVariableW(L"CYAN_TEST_LDID", buffer.data(), static_cast<DWORD>(buffer.size()));
   if (length == 0U || static_cast<std::size_t>(length) >= buffer.size()) {
     return {};
   }
@@ -349,6 +349,67 @@ TEST_CASE("pipeline accepts TIPA and atomically publishes IPA output") {
   CHECK(plist.value().string("CFBundleName") == "Archive Result");
 }
 
+TEST_CASE("pipeline copies payload root items beside and never inside the app bundle") {
+  TemporaryDirectory fixture;
+  const auto source = fixture.path() / L"source";
+  const auto app = source / L"Payload" / L"PayloadRoot.app";
+  make_app(app);
+
+  cyan::ArchiveService archives;
+  const auto input = fixture.path() / L"Input.ipa";
+  REQUIRE(archives.create_zip(source, input, 1, false));
+
+  const auto payload_file = fixture.path() / L"custom.file";
+  const auto payload_directory = fixture.path() / L"ExtraAssets";
+  std::ofstream(payload_file, std::ios::binary) << "payload-root";
+  std::filesystem::create_directories(payload_directory);
+  std::ofstream(payload_directory / L"nested.txt", std::ios::binary) << "nested";
+
+  cyan::CyanOptions options;
+  options.input = input;
+  options.output = fixture.path() / L"Output.ipa";
+  options.payload_root_items = {payload_file, payload_directory};
+  options.overwrite = true;
+
+  cyan::CyanPipeline pipeline;
+  REQUIRE(pipeline.run(std::move(options)));
+
+  const auto extracted = fixture.path() / L"published";
+  REQUIRE(archives.extract(fixture.path() / L"Output.ipa", extracted));
+  CHECK(std::filesystem::is_regular_file(extracted / L"Payload" / L"custom.file"));
+  CHECK(std::filesystem::is_regular_file(extracted / L"Payload" / L"ExtraAssets" / L"nested.txt"));
+  CHECK_FALSE(
+      std::filesystem::exists(extracted / L"Payload" / L"PayloadRoot.app" / L"custom.file"));
+  CHECK_FALSE(
+      std::filesystem::exists(extracted / L"Payload" / L"PayloadRoot.app" / L"ExtraAssets"));
+}
+
+TEST_CASE("payload root items cannot replace the application bundle") {
+  TemporaryDirectory fixture;
+  const auto source = fixture.path() / L"source";
+  make_app(source / L"Payload" / L"Collision.app");
+
+  cyan::ArchiveService archives;
+  const auto input = fixture.path() / L"Input.ipa";
+  REQUIRE(archives.create_zip(source, input, 1, false));
+
+  const auto colliding_item = fixture.path() / L"Collision.app";
+  std::filesystem::create_directories(colliding_item);
+  std::ofstream(colliding_item / L"unexpected.txt", std::ios::binary) << "collision";
+
+  cyan::CyanOptions options;
+  options.input = input;
+  options.output = fixture.path() / L"Output.ipa";
+  options.payload_root_items = {colliding_item};
+  options.overwrite = true;
+
+  cyan::CyanPipeline pipeline;
+  const auto transformed = pipeline.run(std::move(options));
+  REQUIRE_FALSE(transformed);
+  CHECK(transformed.error().code == cyan::ErrorCode::archive_unsafe_path);
+  CHECK_FALSE(std::filesystem::exists(fixture.path() / L"Output.ipa"));
+}
+
 TEST_CASE("integrated ipapatch uses one extract and one package pass") {
   const auto signer = ldid_from_environment();
   if (signer.empty()) {
@@ -376,11 +437,9 @@ TEST_CASE("integrated ipapatch uses one extract and one package pass") {
 
   std::vector<std::wstring> messages;
   cyan::CyanPipeline pipeline;
-  auto completed = pipeline.run(std::move(options), [&](std::wstring_view message) {
-    messages.emplace_back(message);
-  });
-  const std::string pipeline_error =
-      completed ? std::string{} : completed.error().message;
+  auto completed = pipeline.run(std::move(options),
+                                [&](std::wstring_view message) { messages.emplace_back(message); });
+  const std::string pipeline_error = completed ? std::string{} : completed.error().message;
   INFO(pipeline_error);
   REQUIRE(completed);
   CHECK(std::count_if(messages.begin(), messages.end(), [](const std::wstring& message) {
@@ -404,8 +463,7 @@ TEST_CASE("integrated ipapatch uses one extract and one package pass") {
   CHECK(inspected.value().slices.front().has_code_signature);
 
   const auto installed_dylib =
-      extracted / L"Payload" / L"Integrated.app" / L"Frameworks" /
-      injected_dylib.filename();
+      extracted / L"Payload" / L"Integrated.app" / L"Frameworks" / injected_dylib.filename();
   auto dylib_info = inspector.inspect(installed_dylib);
   REQUIRE(dylib_info);
   REQUIRE(dylib_info.value().slices.size() == 1U);

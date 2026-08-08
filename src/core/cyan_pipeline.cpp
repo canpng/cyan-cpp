@@ -173,6 +173,40 @@ Result<std::filesystem::path> find_app(const std::filesystem::path& package_root
   return Result<std::filesystem::path>::success(apps.front());
 }
 
+Result<void> copy_payload_root_items(const std::vector<std::filesystem::path>& sources,
+                                     const std::filesystem::path& package_root,
+                                     const std::filesystem::path& application,
+                                     const PipelineLogger& logger) {
+  const auto payload = (package_root / L"Payload").lexically_normal();
+  const auto normalized_application = lower(application.lexically_normal().native());
+  for (const auto& source : sources) {
+    const auto name = source.lexically_normal().filename();
+    if (name.empty() || name == L"." || name == L"..") {
+      return Result<void>::failure(
+          {ErrorCode::archive_unsafe_path, "payload root item has no safe file name", source});
+    }
+
+    const auto destination = (payload / name).lexically_normal();
+    const auto relative = destination.lexically_relative(payload);
+    if (relative.empty() || relative.is_absolute() || *relative.begin() == L"..") {
+      return Result<void>::failure(
+          {ErrorCode::archive_unsafe_path, "payload root item escapes Payload", source});
+    }
+    if (lower(destination.native()) == normalized_application) {
+      return Result<void>::failure({ErrorCode::archive_unsafe_path,
+                                    "payload root item would replace the application bundle",
+                                    source});
+    }
+
+    auto copied = copy_secure(source, destination, true);
+    if (!copied) {
+      return copied;
+    }
+    log(logger, L"[*] copied " + name.native() + L" to Payload root");
+  }
+  return Result<void>::success();
+}
+
 void add_or_replace(std::vector<NamedItem>& items, const std::filesystem::path& path) {
   const std::wstring name = path.filename().native();
   const std::wstring folded = lower(name);
@@ -493,6 +527,12 @@ Result<void> CyanPipeline::run(CyanOptions options, const PipelineLogger& logger
     return Result<void>::failure(app_result.error());
   }
   auto app = app_result.take_value();
+
+  auto payload_items =
+      copy_payload_root_items(options.payload_root_items, package_root, app.path(), logger);
+  if (!payload_items) {
+    return payload_items;
+  }
 
   MachOInspector inspector;
   auto main_info = inspector.inspect(app.executable());

@@ -12,6 +12,10 @@ struct CyanOptions {
   std::filesystem::path output;
   std::vector<std::filesystem::path> cyan_files;
   std::vector<std::filesystem::path> injected_items;
+  // Items copied beside the application bundle at <package>/Payload/<name>.
+  // This is intentionally distinct from injected_items, whose generic items
+  // are installed inside the .app bundle.
+  std::vector<std::filesystem::path> payload_root_items;
   std::optional<std::wstring> name;
   std::optional<std::wstring> version;
   std::optional<std::wstring> bundle_id;

@@ -1,10 +1,21 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "cyan-cpp",
-  "version-string": "0.3.0",
+  "version-string": "1.0.0",
   "description": "Native Windows C++20 rewrite of cyan 1.4.4",
   "license": "MIT",
   "supports": "windows & x64",
+  "features": {
+    "gui": {
+      "description": "Qt 6 Quick desktop application",
+      "dependencies": [
+        {
+          "name": "qtdeclarative",
+          "default-features": false
+        }
+      ]
+    }
+  },
   "dependencies": [
     {
       "name": "lief",

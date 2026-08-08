@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable release tag (vMAJOR.MINOR.PATCH)
+        required: true
+        default: v1.0.0
 
 permissions:
   contents: write
@@ -12,6 +18,7 @@ jobs:
   release:
     runs-on: windows-2022
     env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_DISABLE_METRICS: "1"
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
@@ -19,6 +26,18 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Verify stable release version
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Stable release tags must use vMAJOR.MINOR.PATCH (received $tag)"
+          }
+          $manifestVersion = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'version-string'
+          if ($tag -ne "v$manifestVersion") {
+            throw "Release tag $tag does not match project version $manifestVersion"
+          }
 
       - name: Checkout pinned vcpkg
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -52,6 +71,8 @@ jobs:
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_MANIFEST_FEATURES=gui `
+            -DCYAN_BUILD_GUI=ON `
             -DCYAN_LDID_EXECUTABLE="${{ github.workspace }}\out\tools\ldid.exe" `
             -DCYAN_WARNINGS_AS_ERRORS=ON
           cmake --build out\build\windows-release --config Release --parallel 4
@@ -61,13 +82,30 @@ jobs:
         shell: pwsh
         run: |
           cmake --install out\build\windows-release --prefix out\package --config Release
-          Compress-Archive -Path out\package\* -DestinationPath cyan-cpp-windows-x64.zip -CompressionLevel Optimal -Force
-          (Get-FileHash cyan-cpp-windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  cyan-cpp-windows-x64.zip' | Set-Content cyan-cpp-windows-x64.sha256 -Encoding ascii
-          .\scripts\generate-sbom.ps1 -OutputPath cyan-cpp-windows-x64.spdx.json
+          $requiredFiles = @("cyan-gui.exe", "cyan.exe", "cgen.exe", "ipapatch.exe", "ldid.exe")
+          foreach ($requiredFile in $requiredFiles) {
+            if (-not (Test-Path "out\package\$requiredFile" -PathType Leaf)) {
+              throw "$requiredFile is missing from the release package"
+            }
+          }
+          if (-not (Get-ChildItem out\package -Recurse -File -Filter Qt6Core.dll)) {
+            throw "Qt runtime was not deployed"
+          }
+          if (-not (Get-ChildItem out\package -Recurse -File -Filter qwindows.dll)) {
+            throw "Qt Windows platform plugin was not deployed"
+          }
+          $baseName = "cyan-cpp-${env:RELEASE_TAG}-windows-x64"
+          Compress-Archive -Path out\package\* -DestinationPath "$baseName.zip" -CompressionLevel Optimal -Force
 
       - name: Create GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create '${{ github.ref_name }}' cyan-cpp-windows-x64.zip cyan-cpp-windows-x64.sha256 cyan-cpp-windows-x64.spdx.json --verify-tag --generate-notes
+          $tag = $env:RELEASE_TAG
+          $baseName = "cyan-cpp-$tag-windows-x64"
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            gh release create $tag "$baseName.zip" --target '${{ github.sha }}' --generate-notes --title "cyan-cpp $tag" --latest
+          } else {
+            gh release create $tag "$baseName.zip" --verify-tag --generate-notes --title "cyan-cpp $tag" --latest
+          }

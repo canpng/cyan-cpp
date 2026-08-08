@@ -15,6 +15,7 @@
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_MANIFEST_FEATURES": "gui",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CYAN_BUILD_TESTS": "ON"
       },
@@ -99,4 +100,3 @@
     }
   ]
 }
-

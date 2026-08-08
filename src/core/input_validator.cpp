@@ -96,6 +96,17 @@ Result<void> validate_and_normalize(CyanOptions& options) {
       return exists;
     }
   }
+  for (const auto& path : options.payload_root_items) {
+    auto exists = require_exists(path, false);
+    if (!exists) {
+      return exists;
+    }
+    const auto name = path.lexically_normal().filename();
+    if (name.empty() || name == L"." || name == L"..") {
+      return Result<void>::failure(
+          {ErrorCode::archive_unsafe_path, "payload root item has no safe file name", path});
+    }
+  }
   for (const auto& path : options.cyan_files) {
     auto exists = require_exists(path, true);
     if (!exists) {
@@ -103,9 +114,8 @@ Result<void> validate_and_normalize(CyanOptions& options) {
     }
   }
 
-  for (const auto& optional :
-       {options.icon, options.merge_plist, options.entitlements, options.ldid_path,
-        options.ipapatch_dylib}) {
+  for (const auto& optional : {options.icon, options.merge_plist, options.entitlements,
+                               options.ldid_path, options.ipapatch_dylib}) {
     auto valid = validate_optional_file(optional);
     if (!valid) {
       return valid;

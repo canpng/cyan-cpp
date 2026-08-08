@@ -4,8 +4,9 @@
 
 A native C++20 rewrite of [cyan](https://github.com/asdfzxcvbn/pyzule-rw) for Windows x64. It modifies authorized `.ipa`, `.tipa`, and `.app` packages without requiring Python, WSL, macOS, or Xcode at runtime.
 
-> [!WARNING]
-> Version 0.3.0 is a beta release focused on performance and efficiency. The project leaves beta at 1.0.0. Keep a copy of every input file.
+> [!IMPORTANT]
+> Version 1.0.0 is the first stable cyan-cpp release. Package modification is inherently
+> destructive, so keep a copy of every input file.
 
 ## Features
 
@@ -14,13 +15,37 @@ A native C++20 rewrite of [cyan](https://github.com/asdfzxcvbn/pyzule-rw) for Wi
 - Supports thin and FAT Mach-O files, arm64 thinning, entitlements, and `ldid` signing.
 - Handles spaces and Unicode characters in Windows paths.
 - Provides ipapatch v2.1.3 behavior as both an integrated backend and a standalone CLI.
+- Includes a native Qt 6 Quick desktop application with a job composer, sequential queue,
+  persistent presets, light/dark themes, and native Windows file pickers.
+- Can copy GUI-only Payload Root items directly to `IPA/Payload/<name>` without treating them as
+  app-bundle injections.
 - Uses atomic output publishing; failed operations do not replace the input.
 
 ## Download
 
-Open [Windows CI](https://github.com/canpng/cyan-cpp/actions/workflows/ci.yml), select a successful `Windows 2022 / Release` run, and download `cyan-cpp-windows-2022-x64`.
+Download the latest stable Windows package from
+[GitHub Releases](https://github.com/canpng/cyan-cpp/releases/latest). Version 1.0.0 is published as
+`cyan-cpp-v1.0.0-windows-x64.zip`. Development snapshots remain available from successful
+[Windows CI](https://github.com/canpng/cyan-cpp/actions/workflows/ci.yml) runs.
 
-The archive contains `cyan.exe`, `cgen.exe`, `ipapatch.exe`, `ldid.exe`, the pinned ipapatch payload, and required runtime DLLs.
+The archive contains `cyan-gui.exe`, `cyan.exe`, `cgen.exe`, `ipapatch.exe`, `ldid.exe`, the pinned
+ipapatch payload, and required runtime DLLs.
+
+## Desktop application
+
+Run `cyan-gui.exe` for the native Windows interface. The main workflow is:
+
+```text
+Select IPA -> choose preset/tweaks -> choose output -> add to queue -> start queue
+```
+
+Archive, signing, Mach-O, and filesystem work runs outside the QML thread. Queue entries hold an
+immutable C++ snapshot and run one at a time. GUI presets are stored as Unicode JSON under the
+user's application-data directory; they are intentionally different from portable `.cyan`
+packages.
+
+The **Payload Root** tab is also intentionally separate from injection. Its items are copied to
+`<package>/Payload/<item-name>`, beside the `.app` bundle, and never to the application root.
 
 ## Usage
 
@@ -70,7 +95,14 @@ The bundled `zxPluginsInject.dylib` comes from ipapatch v2.1.3:
 SHA-256  cd903ea15657cbd356398adcb60c8872c41c29b69acc1a5dfb78a49d6e75dea5
 ```
 
-## 0.3.0 verification
+## 1.0.0 release
+
+Version 1.0.0 promotes cyan-cpp from beta and introduces the native Qt 6 desktop application,
+sequential background job queue, persistent presets and settings, light/dark themes, and the safe
+Payload Root workflow. It retains the optimized archive and ipapatch pipeline verified during the
+0.3.0 performance cycle.
+
+### Performance baseline
 
 Local Release tests used decrypted YouTube Music 9.29, Instagram 439.0.0, and TikTok 46.1.0 IPAs:
 
@@ -80,7 +112,10 @@ Local Release tests used decrypted YouTube Music 9.29, Instagram 439.0.0, and Ti
 - Dylib plus `-uwdsq` median total time fell from 96.62 seconds to 75.19 seconds.
 - Integrated Cyan plus ipapatch continued to use one full extraction and one packaging pass.
 
-These are local corpus measurements, not universal speed guarantees. Before publishing the GitHub Release, the clean hosted `Windows 2022 / Release` workflow must build, test, smoke-test, package, and upload the 0.3.0 artifact successfully. Device installation tests, malformed-input fuzzing, low-disk tests, and long-path tests remain recommended before 1.0.0.
+These are local corpus measurements, not universal speed guarantees. Stable release tags are
+published only after the clean hosted Windows workflow builds, tests, packages, and verifies the
+CLI and GUI deliverables. Device installation tests, malformed-input fuzzing, low-disk tests, and
+long-path tests remain recommended for future hardening.
 
 ## Build
 
@@ -100,6 +135,16 @@ cmake --build --preset windows-release
 ctest --preset windows-release
 cmake --install out\build\windows-release --prefix out\package
 ```
+
+The standard Windows presets enable the vcpkg `gui` feature and build Qt 6. To build only the CLI
+and core libraries, configure with `-DCYAN_BUILD_GUI=OFF` and omit the `gui` manifest feature.
+
+## Publishing a stable release
+
+After the version commit passes Windows CI, open **Actions**, select **Release**, choose
+**Run workflow**, and enter a tag such as `v1.0.0`. The workflow verifies that the tag matches the
+project version, builds and tests the MSVC/Qt package, creates the stable GitHub Release, and
+attaches the versioned Windows ZIP.
 
 ## Credits
 
