@@ -19,7 +19,7 @@ jobs:
     runs-on: windows-2022
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-      VCPKG_ROOT: V:\
+      VCPKG_ROOT: D:\v
       VCPKG_DISABLE_METRICS: "1"
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
 
@@ -46,15 +46,16 @@ jobs:
           ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
           path: vcpkg
 
-      - name: Map vcpkg to a short path
+      - name: Create short vcpkg path
         shell: pwsh
         run: |
-          if (Test-Path "V:\") {
-            throw "V: drive is already in use"
+          # HarfBuzz calls os.path.relpath, so the short path must stay on workspace drive D:.
+          if (Test-Path $env:VCPKG_ROOT) {
+            throw "$env:VCPKG_ROOT is already in use"
           }
-          subst V: "${{ github.workspace }}\vcpkg"
+          New-Item -ItemType Junction -Path $env:VCPKG_ROOT -Target "${{ github.workspace }}\vcpkg" | Out-Null
           if (-not (Test-Path "$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -PathType Leaf)) {
-            throw "failed to map vcpkg to V:"
+            throw "failed to create short vcpkg path"
           }
 
       - name: Restore pinned vcpkg tool
@@ -67,9 +68,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-windows-2022-release-only-v2-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/triplets/x64-windows-release.cmake') }}
+          key: vcpkg-windows-2022-release-only-v3-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/triplets/x64-windows-release.cmake') }}
           restore-keys: |
-            vcpkg-windows-2022-release-only-v2-
+            vcpkg-windows-2022-release-only-v3-
 
       - name: Verify bundled Team ID-capable Procursus ldid
         shell: pwsh
