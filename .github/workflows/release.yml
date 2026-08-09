@@ -39,38 +39,40 @@ jobs:
             throw "Release tag $tag does not match project version $manifestVersion"
           }
 
-      - name: Checkout pinned vcpkg
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          repository: microsoft/vcpkg
-          ref: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
-          path: vcpkg
-
-      - name: Create short vcpkg path
+      - name: Checkout pinned vcpkg to a real short path
         shell: pwsh
         run: |
-          # HarfBuzz calls os.path.relpath, so the short path must stay on workspace drive D:.
+          $ErrorActionPreference = 'Stop'
+          $vcpkgCommit = 'cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3'
           if (Test-Path $env:VCPKG_ROOT) {
             throw "$env:VCPKG_ROOT is already in use"
           }
-          New-Item -ItemType Junction -Path $env:VCPKG_ROOT -Target "${{ github.workspace }}\vcpkg" | Out-Null
-          if (-not (Test-Path "$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -PathType Leaf)) {
-            throw "failed to create short vcpkg path"
+          git init $env:VCPKG_ROOT
+          if ($LASTEXITCODE -ne 0) { throw "failed to initialize vcpkg repository" }
+          git -C $env:VCPKG_ROOT remote add origin https://github.com/microsoft/vcpkg.git
+          if ($LASTEXITCODE -ne 0) { throw "failed to configure vcpkg remote" }
+          git -C $env:VCPKG_ROOT fetch --depth 1 origin $vcpkgCommit
+          if ($LASTEXITCODE -ne 0) { throw "failed to fetch pinned vcpkg commit" }
+          git -C $env:VCPKG_ROOT checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw "failed to checkout pinned vcpkg" }
+          $actualCommit = git -C $env:VCPKG_ROOT rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $actualCommit -ne $vcpkgCommit) {
+            throw "vcpkg checkout mismatch: expected $vcpkgCommit, got $actualCommit"
           }
 
       - name: Restore pinned vcpkg tool
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: ${{ github.workspace }}\vcpkg\vcpkg.exe
+          path: ${{ env.VCPKG_ROOT }}\vcpkg.exe
           key: vcpkg-tool-windows-cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
 
       - name: Restore dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-windows-2022-release-only-v3-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/triplets/x64-windows-release.cmake') }}
+          key: vcpkg-windows-2022-release-only-v4-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/triplets/x64-windows-release.cmake') }}
           restore-keys: |
-            vcpkg-windows-2022-release-only-v3-
+            vcpkg-windows-2022-release-only-v4-
 
       - name: Verify bundled Team ID-capable Procursus ldid
         shell: pwsh
@@ -97,19 +99,8 @@ jobs:
       - name: Assemble release
         shell: pwsh
         run: |
-          cmake --install out\build\windows-release --prefix out\package --config Release
-          $requiredFiles = @("cyan-gui.exe", "cyan.exe", "cgen.exe", "ipapatch.exe", "ldid.exe")
-          foreach ($requiredFile in $requiredFiles) {
-            if (-not (Test-Path "out\package\$requiredFile" -PathType Leaf)) {
-              throw "$requiredFile is missing from the release package"
-            }
-          }
-          if (-not (Get-ChildItem out\package -Recurse -File -Filter Qt6Core.dll)) {
-            throw "Qt runtime was not deployed"
-          }
-          if (-not (Get-ChildItem out\package -Recurse -File -Filter qwindows.dll)) {
-            throw "Qt Windows platform plugin was not deployed"
-          }
+          cmake --install out\build\windows-release --prefix "${{ github.workspace }}\out\package" --config Release
+          .\scripts\test-windows-package.ps1 -PackageRoot out\package
           $baseName = "cyan-cpp-${env:RELEASE_TAG}-windows-x64"
           Compress-Archive -Path out\package\* -DestinationPath "$baseName.zip" -CompressionLevel Optimal -Force
 

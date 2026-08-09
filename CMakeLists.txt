@@ -201,8 +201,14 @@ target_link_libraries(cgen PRIVATE cyan_core cyan_archive)
 cyan_set_project_warnings(cgen)
 
 if(CYAN_BUILD_GUI)
+  # Keep the Windows executables and their Qt runtime DLLs together at the
+  # package root so the GUI can be launched directly without modifying PATH.
+  set(CMAKE_INSTALL_BINDIR ".")
   find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2)
   qt_standard_project_setup(REQUIRES 6.5)
+  if(Qt6_VERSION VERSION_GREATER_EQUAL 6.8)
+    qt_policy(SET QTP0004 NEW)
+  endif()
 
   qt_add_executable(
     cyan_gui
@@ -235,6 +241,11 @@ if(CYAN_BUILD_GUI)
       cyan_pipeline
   )
   cyan_set_project_warnings(cyan_gui)
+  if(MSVC)
+    # Qt 6.11's generated QML code instantiates constexpr helpers that trigger
+    # C4702 inside Qt headers. Keep /WX for all other project warnings.
+    target_compile_options(cyan_gui PRIVATE /wd4702)
+  endif()
 
   set_source_files_properties(
     src/gui/qml/Theme.qml
@@ -290,10 +301,22 @@ if(CYAN_BUILD_GUI)
     )
   endif()
 
-  install(TARGETS cyan_gui RUNTIME DESTINATION ".")
+  install(
+    TARGETS cyan_gui
+    RUNTIME_DEPENDENCIES
+      PRE_EXCLUDE_REGEXES
+        "api-ms-.*"
+        "ext-ms-.*"
+      POST_EXCLUDE_REGEXES
+        ".*[\\\\/][Ss][Yy][Ss][Tt][Ee][Mm]32[\\\\/].*"
+        ".*[\\\\/][Ss][Yy][Ss][Ww][Oo][Ww]64[\\\\/].*"
+    RUNTIME DESTINATION "."
+  )
   qt_generate_deploy_qml_app_script(
     TARGET cyan_gui
     OUTPUT_SCRIPT cyan_gui_deploy_script
+    NO_TRANSLATIONS
+    NO_COMPILER_RUNTIME
     NO_UNSUPPORTED_PLATFORM_ERROR
   )
   install(SCRIPT "${cyan_gui_deploy_script}")

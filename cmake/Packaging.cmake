@@ -1,5 +1,12 @@
 include(GNUInstallDirs)
 
+if(MSVC)
+  # Package the redistributable MSVC runtime explicitly. windeployqt cannot
+  # locate it in non-developer shells such as GitHub Actions PowerShell.
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ".")
+  include(InstallRequiredSystemLibraries)
+endif()
+
 set(cyan_runtime_dependency_directories)
 if(MINGW)
   get_filename_component(cyan_compiler_runtime_directory "${CMAKE_CXX_COMPILER}" DIRECTORY)

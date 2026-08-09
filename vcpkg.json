@@ -10,6 +10,13 @@
       "description": "Qt 6 Quick desktop application",
       "dependencies": [
         {
+          "name": "qtbase",
+          "default-features": false,
+          "features": [
+            "windeployqt"
+          ]
+        },
+        {
           "name": "qtdeclarative",
           "default-features": false
         }
