@@ -8,6 +8,7 @@ import "../components" as C
 Item {
     id: page
     property int selectedPreset: -1
+    signal createRequested()
 
     FileDialog {
         id: relinkDialog
@@ -27,7 +28,7 @@ Item {
     Dialog {
         id: renameDialog
         anchors.centerIn: parent
-        width: 390
+        width: 360
         modal: true
         title: "Önayarı Yeniden Adlandır"
         standardButtons: Dialog.Save | Dialog.Cancel
@@ -37,92 +38,178 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 28
-        spacing: 18
-        ColumnLayout {
+        anchors.margins: 8
+        spacing: 7
+
+        RowLayout {
             Layout.fillWidth: true
-            spacing: 3
-            Text { text: "Önayarlar"; color: Theme.text; font.pixelSize: 25; font.weight: Font.DemiBold }
-            Text {
-                text: "Sık kullandığınız tweak ve Payload kombinasyonlarını yönetin."
-                color: Theme.secondaryText; font.pixelSize: 13
+            Layout.preferredHeight: 34
+            spacing: 8
+            Text { text: "Önayarlar"; color: Theme.text; font.pixelSize: 17; font.weight: Font.DemiBold }
+            Text { text: app.presets.count + " kayıt"; color: Theme.tertiaryText; font.pixelSize: 10 }
+            Item { Layout.fillWidth: true }
+            C.FormField {
+                id: searchField
+                Layout.preferredWidth: Math.min(250, page.width * 0.28)
+                placeholderText: "Önayar ara"
             }
+            C.AppButton { text: "Yeni İşe Git"; compact: true; primary: true; onClicked: page.createRequested() }
         }
 
-        Rectangle {
-            Layout.fillWidth: true; Layout.fillHeight: true
-            radius: Theme.radius; color: Theme.surface
-            border.width: 1; border.color: Theme.border
+        C.Panel {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            headerVisible: false
+            padding: 0
+            contentSpacing: 0
 
-            ColumnLayout {
-                anchors.centerIn: parent; spacing: 7
-                visible: app.presets.count === 0
-                Text { Layout.alignment: Qt.AlignHCenter; text: "◇"; color: Theme.tertiaryText; font.pixelSize: 34 }
-                Text { text: "Henüz önayar yok"; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold }
-                Text { text: "Yeni İş ekranındaki seçimlerden bir önayar oluşturabilirsiniz."; color: Theme.secondaryText; font.pixelSize: 13 }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 30
+                color: Theme.surfaceAlt
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 8
+                    spacing: 10
+                    Text { Layout.fillWidth: true; Layout.minimumWidth: 180; text: "ÖNAYAR"; color: Theme.tertiaryText; font.pixelSize: 9; font.weight: Font.DemiBold }
+                    Text { Layout.preferredWidth: 250; visible: page.width >= 1020; text: "İÇERİK"; color: Theme.tertiaryText; font.pixelSize: 9; font.weight: Font.DemiBold }
+                    Text { Layout.preferredWidth: 90; text: "AYARLAR"; color: Theme.tertiaryText; font.pixelSize: 9; font.weight: Font.DemiBold }
+                    Text { Layout.preferredWidth: 140; text: "DURUM"; color: Theme.tertiaryText; font.pixelSize: 9; font.weight: Font.DemiBold }
+                    Item { Layout.preferredWidth: 110 }
+                }
             }
 
-            ListView {
-                anchors.fill: parent; anchors.margins: 12
-                spacing: 10; clip: true; model: app.presets
-                visible: app.presets.count > 0
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                delegate: Rectangle {
-                    required property int index
-                    required property string name
-                    required property string subtitle
-                    required property int missingCount
-                    required property string missingSummary
-                    required property bool includesSettings
-                    width: ListView.view.width
-                    implicitHeight: presetContent.implicitHeight + 28
-                    radius: 12; color: Theme.surfaceAlt
-                    border.width: 1
-                    border.color: missingCount > 0 ? Theme.warning : Theme.border
-                    ColumnLayout {
-                        id: presetContent
-                        anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-                        anchors.margins: 14; spacing: 9
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: app.presets.count === 0
+                    text: "Henüz önayar yok — Yeni İş ekranındaki ayarları kaydedebilirsiniz."
+                    color: Theme.tertiaryText
+                    font.pixelSize: 12
+                }
+
+                ListView {
+                    anchors.fill: parent
+                    clip: true
+                    model: app.presets
+                    visible: app.presets.count > 0
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: C.AppScrollBar { }
+
+                    delegate: Rectangle {
+                        id: presetRow
+                        required property int index
+                        required property string name
+                        required property string subtitle
+                        required property int missingCount
+                        required property string missingSummary
+                        required property bool includesSettings
+                        property bool matchesSearch: searchField.text.length === 0 || name.toLocaleLowerCase().includes(searchField.text.toLocaleLowerCase())
+
+                        width: ListView.view.width
+                        height: matchesSearch ? (missingCount > 0 ? 62 : 44) : 0
+                        visible: matchesSearch
+                        color: hover.hovered ? Theme.surfaceHover : "transparent"
+                        clip: true
+                        HoverHandler { id: hover }
+
+                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: Theme.border }
+                        Rectangle { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 2; visible: presetRow.missingCount > 0; color: Theme.warning }
+
                         RowLayout {
-                            Layout.fillWidth: true; spacing: 12
-                            Rectangle {
-                                Layout.preferredWidth: 40; Layout.preferredHeight: 40
-                                radius: 10; color: Theme.accentSurface
-                                Text { anchors.centerIn: parent; text: "P"; color: Theme.accent; font.bold: true }
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 8
+                            height: 44
+                            spacing: 10
+
+                            Text {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 180
+                                text: presetRow.name
+                                color: Theme.text
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
                             }
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 3
-                                Text { Layout.fillWidth: true; text: name; color: Theme.text; font.pixelSize: 15; font.weight: Font.DemiBold; elide: Text.ElideRight }
-                                Text { Layout.fillWidth: true; text: subtitle + (includesSettings ? "  ·  Ayarlar dahil" : ""); color: Theme.secondaryText; font.pixelSize: 12; elide: Text.ElideRight }
+                            Text {
+                                Layout.preferredWidth: 250
+                                visible: page.width >= 1020
+                                text: presetRow.subtitle
+                                color: Theme.secondaryText
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
                             }
-                            C.AppButton {
-                                text: "Uygula"; compact: true
-                                onClicked: app.editPreset(index)
+                            Text {
+                                Layout.preferredWidth: 90
+                                text: presetRow.includesSettings ? "Dahil" : "—"
+                                color: presetRow.includesSettings ? Theme.text : Theme.tertiaryText
+                                font.pixelSize: 10
                             }
-                            ToolButton {
-                                text: "•••"; implicitWidth: 42; implicitHeight: 40
-                                onClicked: presetMenu.popup()
-                                Menu {
-                                    id: presetMenu
-                                    MenuItem { text: "Düzenle"; onTriggered: app.editPreset(index) }
-                                    MenuItem { text: "Çoğalt"; onTriggered: app.presets.duplicatePreset(index) }
-                                    MenuItem {
-                                        text: "Yeniden Adlandır"
-                                        onTriggered: { page.selectedPreset = index; renameField.text = name; renameDialog.open() }
+                            Text {
+                                Layout.preferredWidth: 140
+                                text: presetRow.missingCount > 0 ? presetRow.missingCount + " eksik dosya" : "Hazır"
+                                color: presetRow.missingCount > 0 ? Theme.warning : Theme.success
+                                font.pixelSize: 10
+                            }
+                            RowLayout {
+                                Layout.preferredWidth: 110
+                                spacing: 3
+                                C.AppButton { text: "Uygula"; compact: true; primary: true; onClicked: app.editPreset(presetRow.index) }
+                                C.IconButton {
+                                    glyph: "···"
+                                    implicitWidth: 30
+                                    implicitHeight: 28
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "Önayar işlemleri"
+                                    onClicked: presetMenu.popup()
+                                    Menu {
+                                        id: presetMenu
+                                        MenuItem { text: "Düzenle"; onTriggered: app.editPreset(presetRow.index) }
+                                        MenuItem { text: "Çoğalt"; onTriggered: app.presets.duplicatePreset(presetRow.index) }
+                                        MenuItem {
+                                            text: "Yeniden Adlandır"
+                                            onTriggered: {
+                                                page.selectedPreset = presetRow.index
+                                                renameField.text = presetRow.name
+                                                renameDialog.open()
+                                            }
+                                        }
+                                        MenuSeparator { }
+                                        MenuItem { text: "Sil"; onTriggered: app.presets.removePreset(presetRow.index) }
                                     }
-                                    MenuSeparator { }
-                                    MenuItem { text: "Sil"; onTriggered: app.presets.removePreset(index) }
                                 }
                             }
                         }
-                        C.InlineMessage {
-                            Layout.fillWidth: true; kind: "warning"
-                            text: missingSummary
-                        }
-                        C.AppButton {
-                            text: "Yeniden Bağla…"; compact: true
-                            visible: missingCount > 0
-                            onClicked: { page.selectedPreset = index; relinkMenu.popup() }
+
+                        RowLayout {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 8
+                            height: 18
+                            visible: presetRow.missingCount > 0
+                            Text { Layout.fillWidth: true; text: presetRow.missingSummary; color: Theme.warning; font.pixelSize: 9; elide: Text.ElideRight }
+                            Text {
+                                text: "Yeniden bağla…"
+                                color: Theme.accent
+                                font.pixelSize: 9
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        page.selectedPreset = presetRow.index
+                                        relinkMenu.popup()
+                                    }
+                                }
+                            }
                         }
                     }
                 }

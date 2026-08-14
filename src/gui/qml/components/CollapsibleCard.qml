@@ -24,9 +24,9 @@ Rectangle {
 
         Button {
             Layout.fillWidth: true
-            implicitHeight: 62
-            leftPadding: 18
-            rightPadding: 18
+            implicitHeight: 50
+            leftPadding: 14
+            rightPadding: 14
             background: Rectangle { color: "transparent"; radius: Theme.radius }
             contentItem: RowLayout {
                 spacing: 12
@@ -36,7 +36,7 @@ Rectangle {
                     Text {
                         text: card.title
                         color: Theme.text
-                        font.pixelSize: 16
+                        font.pixelSize: 14
                         font.weight: Font.DemiBold
                     }
                     Text {
@@ -49,7 +49,7 @@ Rectangle {
                     }
                 }
                 Text {
-                    text: card.expanded ? "⌃" : "⌄"
+                    text: card.expanded ? "▾" : "▸"
                     color: Theme.secondaryText
                     font.pixelSize: 18
                 }
@@ -59,7 +59,7 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
-            height: 1
+            Layout.preferredHeight: 1
             color: Theme.border
             visible: card.expanded
         }
@@ -67,8 +67,8 @@ Rectangle {
         ColumnLayout {
             id: body
             Layout.fillWidth: true
-            Layout.margins: 18
-            spacing: 12
+            Layout.margins: 14
+            spacing: 10
             visible: card.expanded
         }
     }

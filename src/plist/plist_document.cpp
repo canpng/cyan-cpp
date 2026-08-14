@@ -121,19 +121,34 @@ Result<PlistDocument> PlistDocument::load(const std::filesystem::path& path) {
     return Result<PlistDocument>::failure(file.error());
   }
 
+  const auto& bytes = file.value();
+  const auto view = std::span<const char>(bytes.data(), bytes.size());
+  auto parsed = load_memory(std::as_bytes(view));
+  if (!parsed) {
+    Error error = parsed.error();
+    error.path = path;
+    return Result<PlistDocument>::failure(std::move(error));
+  }
+  return parsed;
+}
+
+Result<PlistDocument> PlistDocument::load_memory(std::span<const std::byte> bytes) {
+  if (bytes.size() > static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return Result<PlistDocument>::failure(
+        {ErrorCode::archive_limit_exceeded, "property list is too large", {}});
+  }
   auto implementation = std::make_unique<Impl>();
   plist_format_t parsed_format = PLIST_FORMAT_NONE;
-  const auto& bytes = file.value();
-  const plist_err_t parsed =
-      plist_from_memory(bytes.data(), static_cast<std::uint32_t>(bytes.size()),
-                        &implementation->root, &parsed_format);
+  const plist_err_t parsed = plist_from_memory(reinterpret_cast<const char*>(bytes.data()),
+                                               static_cast<std::uint32_t>(bytes.size()),
+                                               &implementation->root, &parsed_format);
   if (parsed != PLIST_ERR_SUCCESS || implementation->root == nullptr) {
     return Result<PlistDocument>::failure(
-        {ErrorCode::json_invalid, "invalid XML or binary property list", path});
+        {ErrorCode::json_invalid, "invalid XML or binary property list", {}});
   }
   if (plist_get_node_type(implementation->root) != PLIST_DICT) {
     return Result<PlistDocument>::failure(
-        {ErrorCode::invalid_argument, "property list root must be a dictionary", path});
+        {ErrorCode::invalid_argument, "property list root must be a dictionary", {}});
   }
   implementation->format =
       parsed_format == PLIST_FORMAT_BINARY ? PlistFormat::binary : PlistFormat::xml;
@@ -153,11 +168,22 @@ bool PlistDocument::contains(std::string_view key) const {
 }
 
 std::optional<std::string> PlistDocument::string(std::string_view key) const {
+  return string_path({key});
+}
+
+std::optional<std::string> PlistDocument::string_path(
+    std::initializer_list<std::string_view> keys) const {
   if (!implementation_) {
     return std::nullopt;
   }
-  const std::string owned_key(key);
-  plist_t item = plist_dict_get_item(implementation_->root, owned_key.c_str());
+  plist_t item = implementation_->root;
+  for (const auto key : keys) {
+    if (item == nullptr || plist_get_node_type(item) != PLIST_DICT) {
+      return std::nullopt;
+    }
+    const std::string owned_key(key);
+    item = plist_dict_get_item(item, owned_key.c_str());
+  }
   if (item == nullptr || plist_get_node_type(item) != PLIST_STRING) {
     return std::nullopt;
   }
@@ -170,6 +196,44 @@ std::optional<std::string> PlistDocument::string(std::string_view key) const {
   std::string result(value);
   plist_mem_free(value);
   return result;
+}
+
+std::vector<std::string> PlistDocument::string_array(std::string_view key) const {
+  return string_array_path({key});
+}
+
+std::vector<std::string> PlistDocument::string_array_path(
+    std::initializer_list<std::string_view> keys) const {
+  std::vector<std::string> values;
+  if (!implementation_) {
+    return values;
+  }
+  plist_t item = implementation_->root;
+  for (const auto key : keys) {
+    if (item == nullptr || plist_get_node_type(item) != PLIST_DICT) {
+      return values;
+    }
+    const std::string owned_key(key);
+    item = plist_dict_get_item(item, owned_key.c_str());
+  }
+  if (item == nullptr || plist_get_node_type(item) != PLIST_ARRAY) {
+    return values;
+  }
+  const std::uint32_t count = plist_array_get_size(item);
+  values.reserve(count);
+  for (std::uint32_t index = 0; index < count; ++index) {
+    plist_t value = plist_array_get_item(item, index);
+    if (value == nullptr || plist_get_node_type(value) != PLIST_STRING) {
+      continue;
+    }
+    char* text = nullptr;
+    plist_get_string_val(value, &text);
+    if (text != nullptr) {
+      values.emplace_back(text);
+      plist_mem_free(text);
+    }
+  }
+  return values;
 }
 
 std::optional<bool> PlistDocument::boolean(std::string_view key) const {

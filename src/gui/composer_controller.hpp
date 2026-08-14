@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QTemporaryDir>
 #include <QUrl>
 #include <QVariantList>
 
@@ -14,6 +15,7 @@ class ComposerController final : public QObject {
   Q_PROPERTY(QString inputPath READ inputPath NOTIFY inputChanged)
   Q_PROPERTY(QString inputName READ inputName NOTIFY inputChanged)
   Q_PROPERTY(QString inputDetails READ inputDetails NOTIFY inputChanged)
+  Q_PROPERTY(QUrl inputIconUrl READ inputIconUrl NOTIFY inputChanged)
   Q_PROPERTY(QString inputError READ inputError NOTIFY validationChanged)
   Q_PROPERTY(QString selectedPresetName MEMBER selected_preset_name_ NOTIFY formChanged)
 
@@ -64,6 +66,7 @@ class ComposerController final : public QObject {
   [[nodiscard]] QString inputPath() const;
   [[nodiscard]] QString inputName() const;
   [[nodiscard]] QString inputDetails() const;
+  [[nodiscard]] QUrl inputIconUrl() const;
   [[nodiscard]] QString inputError() const;
   [[nodiscard]] FileListModel* injections();
   [[nodiscard]] FileListModel* cyanPackages();
@@ -87,6 +90,8 @@ class ComposerController final : public QObject {
   Q_INVOKABLE void addInjectionUrl(const QUrl& url);
   Q_INVOKABLE void addPayloadUrls(const QVariantList& urls);
   Q_INVOKABLE void addPayloadUrl(const QUrl& url);
+  Q_INVOKABLE void addContentUrls(const QVariantList& urls);
+  Q_INVOKABLE void addContentUrl(const QUrl& url);
   Q_INVOKABLE void reset();
 
  signals:
@@ -102,6 +107,8 @@ class ComposerController final : public QObject {
   static bool pathExists(const QString& path, bool directory = false);
   void addInjectionPath(const QString& path);
   void addPayloadPath(const QString& path);
+  void addContentPath(const QString& path);
+  void readInputMetadata(bool replace_form_values);
   void refreshDerived();
   void clearForm(bool preserve_defaults);
   [[nodiscard]] QString outputPath() const;
@@ -113,6 +120,8 @@ class ComposerController final : public QObject {
   QString input_path_;
   QString input_name_;
   QString input_details_;
+  QUrl input_icon_url_;
+  QTemporaryDir input_icon_cache_;
   QString input_error_;
   QString selected_preset_name_;
 
@@ -123,11 +132,11 @@ class ComposerController final : public QObject {
   QString icon_path_;
   QString plist_path_;
   QString entitlements_path_;
-  bool remove_supported_devices_{false};
-  bool no_watch_{false};
-  bool enable_documents_{false};
-  bool fake_sign_{false};
-  bool thin_{false};
+  bool remove_supported_devices_{true};
+  bool no_watch_{true};
+  bool enable_documents_{true};
+  bool fake_sign_{true};
+  bool thin_{true};
   bool ignore_encrypted_{false};
   int extension_mode_{0};
   int ldid_mode_{0};

@@ -14,57 +14,61 @@ Rectangle {
     signal removeRequested()
     signal moveUpRequested()
     signal moveDownRequested()
-    implicitHeight: 66
-    radius: 10
-    color: Theme.surfaceAlt
+
+    implicitHeight: 42
+    radius: Theme.controlRadius
+    color: rowHover.hovered ? Theme.surfaceHover : Theme.surfaceAlt
     border.width: 1
     border.color: isMissing ? Theme.error : Theme.border
 
+    HoverHandler { id: rowHover }
+
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 12
-        anchors.rightMargin: 8
-        spacing: 11
+        anchors.leftMargin: 7
+        anchors.rightMargin: 4
+        spacing: 6
 
         Rectangle {
-            Layout.preferredWidth: 34
-            Layout.preferredHeight: 34
-            radius: 8
+            Layout.preferredWidth: 24
+            Layout.preferredHeight: 24
+            radius: 4
             color: row.isMissing ? Theme.errorSurface : Theme.accentSurface
             Text {
                 anchors.centerIn: parent
-                text: row.fileType === ".cyan" ? "C" : row.fileType === ".dylib" ? "D" : "◇"
+                text: row.fileType === ".cyan" ? "C" : row.fileType === ".dylib" ? "D" : "B"
                 color: row.isMissing ? Theme.error : Theme.accent
-                font.pixelSize: 13
+                font.pixelSize: 11
                 font.weight: Font.Bold
             }
         }
 
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 2
+            spacing: 1
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: 6
                 Text {
                     Layout.fillWidth: true
                     text: row.fileName
                     color: Theme.text
-                    font.pixelSize: 14
+                    font.pixelSize: 11
                     font.weight: Font.Medium
                     elide: Text.ElideRight
                 }
                 Text {
-                    text: row.fileType + (row.targetLabel.length ? "  ·  " + row.targetLabel : "")
-                    color: Theme.secondaryText
-                    font.pixelSize: 11
+                    text: row.fileType + (row.targetLabel.length ? " · " + row.targetLabel : "")
+                    color: Theme.tertiaryText
+                    font.pixelSize: 10
+                    visible: row.width >= 390
                 }
             }
             Text {
                 Layout.fillWidth: true
                 text: row.isMissing ? "Dosya bulunamadı" : row.filePath
                 color: row.isMissing ? Theme.error : Theme.tertiaryText
-                font.pixelSize: 11
+                font.pixelSize: 9
                 elide: Text.ElideMiddle
                 ToolTip.visible: pathHover.hovered
                 ToolTip.text: row.filePath
@@ -74,23 +78,29 @@ Rectangle {
 
         Column {
             visible: row.reorderable
-            spacing: -4
-            ToolButton {
-                text: "⌃"
-                implicitWidth: 28; implicitHeight: 25
+            spacing: -2
+            IconButton {
+                glyph: "↑"
+                implicitWidth: 24
+                implicitHeight: 19
                 onClicked: row.moveUpRequested()
-                ToolTip.visible: hovered; ToolTip.text: "Yukarı taşı"
+                ToolTip.visible: hovered
+                ToolTip.text: "Yukarı taşı"
             }
-            ToolButton {
-                text: "⌄"
-                implicitWidth: 28; implicitHeight: 25
+            IconButton {
+                glyph: "↓"
+                implicitWidth: 24
+                implicitHeight: 19
                 onClicked: row.moveDownRequested()
-                ToolTip.visible: hovered; ToolTip.text: "Aşağı taşı"
+                ToolTip.visible: hovered
+                ToolTip.text: "Aşağı taşı"
             }
         }
-        ToolButton {
-            text: "×"
-            implicitWidth: 36; implicitHeight: 40
+        IconButton {
+            glyph: "×"
+            danger: true
+            implicitWidth: 30
+            implicitHeight: 30
             Accessible.name: "Kaldır"
             onClicked: row.removeRequested()
             ToolTip.visible: hovered

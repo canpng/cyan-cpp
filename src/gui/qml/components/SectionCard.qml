@@ -7,7 +7,7 @@ Rectangle {
     property string title: ""
     property string description: ""
     default property alias contentData: body.data
-    implicitHeight: content.implicitHeight + 40
+    implicitHeight: content.implicitHeight + 32
     radius: Theme.radius
     color: Theme.surface
     border.width: 1
@@ -16,8 +16,8 @@ Rectangle {
     ColumnLayout {
         id: content
         anchors.fill: parent
-        anchors.margins: 20
-        spacing: 14
+        anchors.margins: 16
+        spacing: 10
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -26,7 +26,7 @@ Rectangle {
             Text {
                 text: card.title
                 color: Theme.text
-                font.pixelSize: 17
+                font.pixelSize: 15
                 font.weight: Font.DemiBold
                 visible: text.length > 0
             }
@@ -34,7 +34,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: card.description
                 color: Theme.secondaryText
-                font.pixelSize: 13
+                font.pixelSize: 12
                 wrapMode: Text.WordWrap
                 visible: text.length > 0
             }
@@ -43,7 +43,7 @@ Rectangle {
         ColumnLayout {
             id: body
             Layout.fillWidth: true
-            spacing: 12
+            spacing: 10
         }
     }
 }

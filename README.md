@@ -142,7 +142,7 @@ and core libraries, configure with `-DCYAN_BUILD_GUI=OFF` and omit the `gui` man
 ## Publishing a stable release
 
 After the version commit passes Windows CI, open **Actions**, select **Release**, choose
-**Run workflow**, and enter a tag such as `v1.0.0`. The workflow verifies that the tag matches the
+**Run workflow**, and enter the `v2.0.0` tag. The workflow verifies that the tag matches the
 project version, builds and tests the MSVC/Qt package, creates the stable GitHub Release, and
 attaches the versioned Windows ZIP.
 

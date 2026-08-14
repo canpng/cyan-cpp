@@ -9,7 +9,7 @@ on:
       tag:
         description: Stable release tag (vMAJOR.MINOR.PATCH)
         required: true
-        default: v1.0.0
+        default: v2.0.0
 
 permissions:
   contents: write

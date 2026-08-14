@@ -10,17 +10,17 @@ ColumnLayout {
     property string buttonText: "Seç…"
     signal valueEdited(string value)
     signal chooseRequested()
-    spacing: 6
+    spacing: 4
 
     Text {
         text: picker.label
         color: Theme.secondaryText
-        font.pixelSize: 12
+        font.pixelSize: 11
         font.weight: Font.Medium
     }
     RowLayout {
         Layout.fillWidth: true
-        spacing: 8
+        spacing: 6
         FormField {
             Layout.fillWidth: true
             text: picker.value

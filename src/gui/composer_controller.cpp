@@ -6,7 +6,11 @@
 #include <QLocale>
 #include <QRegularExpression>
 #include <QUuid>
+#include <filesystem>
 #include <utility>
+
+#include "cyan/metadata/app_metadata_reader.hpp"
+#include "input_icon_cache.hpp"
 
 namespace cyan::gui {
 namespace {
@@ -49,6 +53,7 @@ ComposerController::ComposerController(QObject* parent)
 QString ComposerController::inputPath() const { return input_path_; }
 QString ComposerController::inputName() const { return input_name_; }
 QString ComposerController::inputDetails() const { return input_details_; }
+QUrl ComposerController::inputIconUrl() const { return input_icon_url_; }
 QString ComposerController::inputError() const { return input_error_; }
 FileListModel* ComposerController::injections() { return &injections_; }
 FileListModel* ComposerController::cyanPackages() { return &cyan_packages_; }
@@ -100,6 +105,35 @@ bool ComposerController::pathExists(const QString& path, bool directory) {
   return directory ? info.isDir() : info.exists();
 }
 
+void ComposerController::readInputMetadata(bool replace_form_values) {
+  input_icon_url_.clear();
+  input_error_.clear();
+  if (input_path_.isEmpty()) {
+    return;
+  }
+
+  const AppMetadataReader reader;
+  auto result = reader.read(std::filesystem::path(input_path_.toStdWString()));
+  if (!result) {
+    input_error_ = QStringLiteral("Ana uygulamanın Info.plist verisi okunamadı: %1")
+                       .arg(QString::fromUtf8(result.error().message));
+    return;
+  }
+
+  const AppMetadata& metadata = result.value();
+  const QString detected_name = QString::fromUtf8(metadata.app_name);
+  if (!detected_name.isEmpty()) {
+    input_name_ = detected_name;
+  }
+  if (replace_form_values) {
+    app_name_ = detected_name;
+    app_version_ = QString::fromUtf8(metadata.version);
+    bundle_id_ = QString::fromUtf8(metadata.bundle_identifier);
+    minimum_os_ = QString::fromUtf8(metadata.minimum_os);
+  }
+  input_icon_url_ = cache_application_icon(metadata.icon_data, input_icon_cache_);
+}
+
 void ComposerController::setInputUrl(const QUrl& url) {
   const QString path = localPath(url);
   const QFileInfo info(path);
@@ -119,6 +153,7 @@ void ComposerController::setInputUrl(const QUrl& url) {
   input_name_ = info.fileName();
   input_details_ =
       suffix_label(info) + QStringLiteral("  •  ") + human_size(info.isDir() ? -1 : info.size());
+  readInputMetadata(true);
   const QString base = info.completeBaseName();
   output_file_name_ =
       base + QStringLiteral("_patched.") +
@@ -134,10 +169,15 @@ void ComposerController::clearInput() {
   input_path_.clear();
   input_name_.clear();
   input_details_.clear();
+  input_icon_url_.clear();
   input_error_.clear();
+  app_name_.clear();
+  app_version_.clear();
+  bundle_id_.clear();
+  minimum_os_.clear();
   output_file_name_.clear();
   emit inputChanged();
-  refreshDerived();
+  emit formChanged();
 }
 
 void ComposerController::addInjectionPath(const QString& path) {
@@ -161,6 +201,32 @@ void ComposerController::addPayloadPath(const QString& path) {
   payload_root_items_.addPath(path, QStringLiteral("Payload Root"));
 }
 
+void ComposerController::addContentPath(const QString& path) {
+  const QFileInfo info(path);
+  if (!info.exists()) {
+    emit notification(QStringLiteral("Dosya bulunamadı: %1").arg(path));
+    return;
+  }
+
+  const QString suffix = info.suffix().toLower();
+  const bool cyan_content = suffix == QStringLiteral("cyan");
+  const bool injectable_file =
+      info.isFile() && (suffix == QStringLiteral("deb") || suffix == QStringLiteral("dylib"));
+  const bool injectable_bundle =
+      info.isDir() && (suffix == QStringLiteral("framework") ||
+                       suffix == QStringLiteral("bundle") || suffix == QStringLiteral("appex"));
+
+  if (cyan_content || injectable_file || injectable_bundle) {
+    addInjectionPath(path);
+    return;
+  }
+
+  addPayloadPath(path);
+  emit notification(
+      QStringLiteral("%1 desteklenen bir enjeksiyon türü olmadığı için Payload Root'a eklendi.")
+          .arg(info.fileName()));
+}
+
 void ComposerController::addInjectionUrls(const QVariantList& urls) {
   for (const auto& value : urls) {
     addInjectionPath(localPath(value.toUrl()));
@@ -176,6 +242,14 @@ void ComposerController::addPayloadUrls(const QVariantList& urls) {
 }
 
 void ComposerController::addPayloadUrl(const QUrl& url) { addPayloadPath(localPath(url)); }
+
+void ComposerController::addContentUrls(const QVariantList& urls) {
+  for (const auto& value : urls) {
+    addContentPath(localPath(value.toUrl()));
+  }
+}
+
+void ComposerController::addContentUrl(const QUrl& url) { addContentPath(localPath(url)); }
 
 QString ComposerController::outputPath() const {
   if (output_directory_.trimmed().isEmpty() || output_file_name_.trimmed().isEmpty()) {
@@ -320,6 +394,7 @@ void ComposerController::load(const JobDefinition& job) {
   input_name_ = input.fileName();
   input_details_ =
       suffix_label(input) + QStringLiteral("  •  ") + human_size(input.isDir() ? -1 : input.size());
+  readInputMetadata(false);
   injections_.setItems(job.injections);
   cyan_packages_.setItems(job.cyan_packages);
   payload_root_items_.setItems(job.payload_root_items);
@@ -410,6 +485,7 @@ void ComposerController::clearForm(bool preserve_defaults) {
   input_path_.clear();
   input_name_.clear();
   input_details_.clear();
+  input_icon_url_.clear();
   input_error_.clear();
   selected_preset_name_.clear();
   injections_.clear();
@@ -422,11 +498,11 @@ void ComposerController::clearForm(bool preserve_defaults) {
   icon_path_.clear();
   plist_path_.clear();
   entitlements_path_.clear();
-  remove_supported_devices_ = false;
-  no_watch_ = false;
-  enable_documents_ = false;
-  fake_sign_ = false;
-  thin_ = false;
+  remove_supported_devices_ = true;
+  no_watch_ = true;
+  enable_documents_ = true;
+  fake_sign_ = true;
+  thin_ = true;
   ignore_encrypted_ = false;
   extension_mode_ = 0;
   ldid_mode_ = ldid_default;

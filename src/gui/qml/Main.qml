@@ -10,11 +10,16 @@ ApplicationWindow {
     width: 1240
     height: 800
     minimumWidth: 900
-    minimumHeight: 640
+    minimumHeight: 700
     visible: true
     title: "cyan"
     color: Theme.background
     property int currentPage: 0
+    readonly property bool compactNavigation: width < 1050
+    readonly property Item currentNavButton: currentPage === 0 ? newJobNav
+                                                  : currentPage === 1 ? queueNav
+                                                  : currentPage === 2 ? presetsNav
+                                                                      : settingsNav
 
     SystemPalette { id: systemPalette; colorGroup: SystemPalette.Active }
     Binding {
@@ -33,88 +38,93 @@ ApplicationWindow {
     palette.highlight: Theme.accent
     palette.highlightedText: "white"
 
-    RowLayout {
+    ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
         Rectangle {
-            Layout.preferredWidth: 198
-            Layout.fillHeight: true
-            color: Theme.sidebar
-            border.width: 1
-            border.color: Theme.border
+            id: topBar
+            Layout.fillWidth: true
+            Layout.preferredHeight: 44
+            color: Theme.topBar
 
-            ColumnLayout {
+            RowLayout {
                 anchors.fill: parent
-                anchors.margins: 12
-                spacing: 5
+                anchors.leftMargin: 10
+                anchors.rightMargin: 6
+                spacing: 4
 
                 RowLayout {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 7
-                    Layout.rightMargin: 7
-                    Layout.topMargin: 8
-                    Layout.bottomMargin: 18
-                    spacing: 10
-                    Rectangle {
-                        Layout.preferredWidth: 34
-                        Layout.preferredHeight: 34
-                        radius: 9
-                        color: Theme.accent
-                        Text {
-                            anchors.centerIn: parent
-                            text: "C"
-                            color: "white"
-                            font.pixelSize: 17
-                            font.weight: Font.Bold
-                        }
-                    }
+                    Layout.preferredWidth: 64
+                    spacing: 0
                     Text {
                         text: "cyan"
                         color: Theme.text
-                        font.pixelSize: 18
+                        font.pixelSize: 15
                         font.weight: Font.DemiBold
                     }
-                    Item { Layout.fillWidth: true }
                 }
 
-                C.SidebarItem {
-                    Layout.fillWidth: true
-                    iconText: "＋"
+                C.NavButton {
+                    id: newJobNav
                     text: "Yeni İş"
                     selected: window.currentPage === 0
                     onClicked: window.currentPage = 0
                 }
-                C.SidebarItem {
-                    Layout.fillWidth: true
-                    iconText: "☷"
-                    text: "İşlem Kuyruğu"
+                C.NavButton {
+                    id: queueNav
+                    text: window.compactNavigation ? "Kuyruk" : "İşlem Kuyruğu"
                     selected: window.currentPage === 1
                     onClicked: window.currentPage = 1
                 }
-                C.SidebarItem {
-                    Layout.fillWidth: true
-                    iconText: "◇"
+                C.NavButton {
+                    id: presetsNav
                     text: "Önayarlar"
                     selected: window.currentPage === 2
                     onClicked: window.currentPage = 2
                 }
-                C.SidebarItem {
-                    Layout.fillWidth: true
-                    iconText: "⚙"
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: "cyan " + app.cyanVersion
+                    color: Theme.tertiaryText
+                    font.pixelSize: 11
+                    visible: !window.compactNavigation
+                }
+                C.NavButton {
+                    id: settingsNav
                     text: "Ayarlar"
                     selected: window.currentPage === 3
                     onClicked: window.currentPage = 3
                 }
-                Item { Layout.fillHeight: true }
-                Text {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 10
-                    Layout.bottomMargin: 6
-                    text: "cyan " + app.cyanVersion
-                    color: Theme.tertiaryText
-                    font.pixelSize: 11
+            }
+
+            Rectangle {
+                z: 3
+                y: parent.height - height
+                x: window.currentNavButton
+                   ? window.currentNavButton.mapToItem(topBar, 0, 0).x + 10 +
+                     window.currentNavButton.x * 0
+                   : 0
+                width: window.currentNavButton ? Math.max(24, window.currentNavButton.width - 20) : 0
+                height: 2
+                radius: 1
+                color: Theme.accent
+                Behavior on x {
+                    NumberAnimation { duration: Theme.motionNormal; easing.type: Easing.OutCubic }
                 }
+                Behavior on width {
+                    NumberAnimation { duration: Theme.motionNormal; easing.type: Easing.OutCubic }
+                }
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Theme.border
             }
         }
 
@@ -122,9 +132,9 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             currentIndex: window.currentPage
-            Pages.NewJobPage { }
+            Pages.NewJobPage { onOpenQueueRequested: window.currentPage = 1 }
             Pages.QueuePage { }
-            Pages.PresetsPage { }
+            Pages.PresetsPage { onCreateRequested: window.currentPage = 0 }
             Pages.SettingsPage { }
         }
     }
@@ -133,20 +143,21 @@ ApplicationWindow {
         id: toast
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 24
-        width: Math.min(parent.width - 48, toastText.implicitWidth + 36)
-        height: toastText.implicitHeight + 22
-        radius: 10
+        anchors.bottomMargin: 18
+        width: Math.min(parent.width - 40, toastText.implicitWidth + 32)
+        height: toastText.implicitHeight + 18
+        radius: Theme.panelRadius
         color: Theme.dark ? "#35383d" : "#262a30"
         opacity: 0
         visible: opacity > 0
         z: 100
+
         Text {
             id: toastText
             anchors.centerIn: parent
-            width: Math.min(implicitWidth, window.width - 84)
+            width: Math.min(implicitWidth, window.width - 76)
             color: "white"
-            font.pixelSize: 13
+            font.pixelSize: 12
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
         }
@@ -166,7 +177,10 @@ ApplicationWindow {
     Connections {
         target: app
         function onNavigateToComposer() { window.currentPage = 0 }
-        function onNavigateToQueue() { window.currentPage = 1 }
+        function onNavigateToQueue() {
+            if (window.currentPage !== 0)
+                window.currentPage = 1
+        }
         function onNotification(message) { toast.show(message) }
     }
 }

@@ -4,7 +4,7 @@ cmake_policy(SET CMP0091 NEW)
 
 project(
   cyan-cpp
-  VERSION 1.0.0
+  VERSION 2.0.0
   DESCRIPTION "Native Windows C++20 rewrite of cyan"
   LANGUAGES CXX
 )
@@ -100,6 +100,17 @@ target_link_libraries(
   PRIVATE unofficial::libplist::libplist
 )
 cyan_set_project_warnings(cyan_plist)
+
+add_library(
+  cyan_metadata STATIC
+  src/metadata/app_metadata_reader.cpp
+)
+target_link_libraries(
+  cyan_metadata
+  PUBLIC cyan_core
+  PRIVATE cyan_plist LibArchive::LibArchive
+)
+cyan_set_project_warnings(cyan_metadata)
 
 add_library(
   cyan_image STATIC
@@ -205,6 +216,7 @@ if(CYAN_BUILD_GUI)
   # package root so the GUI can be launched directly without modifying PATH.
   set(CMAKE_INSTALL_BINDIR ".")
   find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2)
+  find_package(ZLIB REQUIRED)
   qt_standard_project_setup(REQUIRES 6.5)
   if(Qt6_VERSION VERSION_GREATER_EQUAL 6.8)
     qt_policy(SET QTP0004 NEW)
@@ -226,6 +238,8 @@ if(CYAN_BUILD_GUI)
     src/gui/job_definition.hpp
     src/gui/job_queue_model.cpp
     src/gui/job_queue_model.hpp
+    src/gui/input_icon_cache.cpp
+    src/gui/input_icon_cache.hpp
     src/gui/preset_model.cpp
     src/gui/preset_model.hpp
   )
@@ -237,7 +251,9 @@ if(CYAN_BUILD_GUI)
     PRIVATE
       Qt6::Quick
       Qt6::QuickControls2
+      ZLIB::ZLIB
       cyan_core
+      cyan_metadata
       cyan_pipeline
   )
   cyan_set_project_warnings(cyan_gui)
@@ -259,12 +275,20 @@ if(CYAN_BUILD_GUI)
       src/gui/qml/Main.qml
       src/gui/qml/Theme.qml
       src/gui/qml/components/AppButton.qml
+      src/gui/qml/components/AppScrollBar.qml
+      src/gui/qml/components/AppSlider.qml
+      src/gui/qml/components/AppSwitch.qml
       src/gui/qml/components/CollapsibleCard.qml
+      src/gui/qml/components/CompactCheckBox.qml
+      src/gui/qml/components/CompactComboBox.qml
       src/gui/qml/components/DropZone.qml
       src/gui/qml/components/FileItemRow.qml
       src/gui/qml/components/FormField.qml
+      src/gui/qml/components/IconButton.qml
       src/gui/qml/components/InlineMessage.qml
       src/gui/qml/components/PathPicker.qml
+      src/gui/qml/components/Panel.qml
+      src/gui/qml/components/NavButton.qml
       src/gui/qml/components/SectionCard.qml
       src/gui/qml/components/SegmentedControl.qml
       src/gui/qml/components/SidebarItem.qml

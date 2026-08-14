@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "cyan-cpp",
-  "version-string": "1.0.0",
-  "description": "Native Windows C++20 rewrite of cyan 1.4.4",
+  "version-string": "2.0.0",
+  "description": "Native Windows C++20 rewrite of cyan 2.0.0",
   "license": "MIT",
   "supports": "windows & x64",
   "features": {
@@ -42,6 +42,7 @@
       "default-features": false
     },
     "libplist",
+    "zlib",
     "nlohmann-json",
     {
       "name": "catch2",

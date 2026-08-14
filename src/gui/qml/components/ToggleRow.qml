@@ -9,8 +9,8 @@ RowLayout {
     property string description: ""
     property bool checked: false
     signal toggled(bool checked)
-    implicitHeight: Math.max(44, labels.implicitHeight)
-    spacing: 16
+    implicitHeight: Math.max(30, labels.implicitHeight)
+    spacing: 8
 
     ColumnLayout {
         id: labels
@@ -20,7 +20,7 @@ RowLayout {
             Layout.fillWidth: true
             text: row.label
             color: Theme.text
-            font.pixelSize: 14
+            font.pixelSize: 12
             font.weight: Font.Medium
             wrapMode: Text.WordWrap
         }
@@ -28,14 +28,13 @@ RowLayout {
             Layout.fillWidth: true
             text: row.description
             color: Theme.secondaryText
-            font.pixelSize: 12
+            font.pixelSize: 11
             wrapMode: Text.WordWrap
             visible: text.length > 0
         }
     }
-    Switch {
+    AppSwitch {
         checked: row.checked
-        focusPolicy: Qt.StrongFocus
         onToggled: row.toggled(checked)
     }
 }
